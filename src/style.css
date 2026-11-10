@@ -1,0 +1,7 @@
+.apelike-stack{position:relative;isolation:isolate;overflow:hidden;min-height:0;height:100%;display:block}
+.apelike-screen{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;background:var(--apelike-background,Canvas);scrollbar-width:none}
+.apelike-screen::-webkit-scrollbar{display:none}
+.apelike-screen[hidden]{display:none}
+.apelike-indicator{position:absolute;right:3px;top:0;width:3px;border-radius:3px;background:var(--apelike-indicator-color,#8888);pointer-events:none;z-index:10;opacity:0;transition:opacity .15s}
+.apelike-touch :where(button,a,[role=button],[data-app-control]){-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;user-select:none}
+.apelike-touch :where(input,textarea,[contenteditable=true],[data-selectable]){user-select:text;-webkit-touch-callout:default}

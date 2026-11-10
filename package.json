@@ -1,0 +1,83 @@
+{
+  "name": "@uiwwsw/stackflow-next",
+  "version": "0.2.0-alpha.2",
+  "type": "module",
+  "description": "Stackflow navigation state and snapshot transitions for Next.js App Router",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./style.css": {
+      "types": "./src/style.d.ts",
+      "default": "./src/next/style.css"
+    },
+    "./dom": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./dom/style.css": {
+      "types": "./src/style.d.ts",
+      "default": "./src/style.css"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/index.js",
+    "src/index.d.ts",
+    "src/style.css",
+    "src/next/style.css",
+    "README.md",
+    "LICENSE",
+    "src/style.d.ts"
+  ],
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.js test/next/*.test.ts",
+    "check": "tsc --noEmit",
+    "build": "tsc",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "^21.0.4",
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@stackflow/core": "^3.1.0"
+  },
+  "peerDependencies": {
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "author": "uiwwsw",
+  "homepage": "https://stackflow-next.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uiwwsw/stackflow-next.git"
+  },
+  "bugs": {
+    "url": "https://github.com/uiwwsw/stackflow-next/issues"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "engines": {
+    "node": ">=20.9.0"
+  }
+}
