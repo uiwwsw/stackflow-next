@@ -1,7 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
-import { findFixedTargets, pinForTransition } from '../../src/next/fixed-targets.ts';
+import { findFixedTargets, pinForTransition, resolveFixedSelectors } from '../../src/next/fixed-targets.ts';
+
+test('a route exception releases only its target in both directions', () => {
+  const targets = [{ selector: '#header', exceptRoutes: ['/checkout'] }, '#player'];
+  assert.deepEqual(resolveFixedSelectors(targets, '/', '/catalog'), ['#header', '#player']);
+  assert.deepEqual(resolveFixedSelectors(targets, '/catalog', '/checkout/?step=2'), ['#player']);
+  assert.deepEqual(resolveFixedSelectors(targets, '/checkout#payment', '/catalog'), ['#player']);
+  assert.deepEqual(resolveFixedSelectors(targets, '/', '/checkout/history'), ['#header', '#player']);
+});
 
 test('fixed targets stay in the DOM, ignore nested duplicates and release their transition markers', () => {
   const win = new Window();
