@@ -200,15 +200,11 @@ export class NavigationEngine {
       engine.current = engine.remember(meta, destination);
       const skipAnimation = engine.skipNextPopAnimation || event.hasUAVisualTransition;
       engine.skipNextPopAnimation = false;
-      if (sameRoute || alreadyRendered || skipAnimation) {
-        engine.cancelTransition();
-        if (alreadyRendered || sameRoute) {
-          if (!sameRoute || from === destination) engine.restoreScroll();
-          engine.rebuild();
-        }
-        return;
-      }
-      if (state?.__NA === true && engine.canAnimate() && !engine.motion(visualSource, destination).disabled) {
+      const syncRenderedEntry = () => {
+        if (!sameRoute || from === destination) engine.restoreScroll();
+        engine.rebuild();
+      };
+      if (!skipAnimation && state?.__NA === true && engine.canAnimate() && !engine.motion(visualSource, destination).disabled) {
         // Next can commit before the browser captures the outgoing screen. Deliver
         // its history event inside the snapshot callback so capture comes first.
         event.stopImmediatePropagation();
@@ -217,9 +213,16 @@ export class NavigationEngine {
           replayedPop = new PopEvent('popstate', { state });
           try { engine.win.dispatchEvent(replayedPop); }
           finally { replayedPop = undefined; }
+          // Next's route observer does not run when the rendered URL is unchanged.
+          if (alreadyRendered && engine.url() === destination && engine.isPending()) {
+            syncRenderedEntry();
+            engine.checkTransitionBounds();
+            engine.finishWhenPageIsReady();
+          }
         }, visualSource);
       } else {
         engine.cancelTransition();
+        if (alreadyRendered || sameRoute) syncRenderedEntry();
       }
     };
     this.win.addEventListener('popstate', pop, true);
