@@ -99,23 +99,44 @@ export class NavigationEngine {
       engine.current = engine.remember(meta, engine.url());
     };
     history.pushState = wrappedPush; history.replaceState = wrappedReplace;
-    const pop = () => {
+    let replayedPop: PopStateEvent | undefined;
+    const pop = (event: PopStateEvent) => {
+      if (event === replayedPop) return;
       engine.capture();engine.saveVisual();
-      const meta = metadata(history.state) ?? engine.fresh(0);
+      const state = history.state;
+      const known = metadata(state);
+      const meta = known ?? engine.fresh(0);
       engine.direction = meta.position < (engine.current?.position ?? 0) ? 'pop' : 'push';
       if (!metadata(history.state)) replace.call(history, {...history.state,[HISTORY_KEY]:meta},'',engine.win.location.href);
       engine.current = engine.remember(meta, engine.url());
-      if(engine.skipNextPopAnimation){engine.skipNextPopAnimation=false;}
-      else engine.begin(engine.direction, engine.url(), () => {});
+      if (engine.skipNextPopAnimation || event.hasUAVisualTransition) {
+        engine.skipNextPopAnimation = false;
+        return;
+      }
+      const doc = engine.win.document as TransitionDocument;
+      if (known && state?.__NA === true && typeof doc.startViewTransition === 'function' && engine.options.animation !== 'none' &&
+          !engine.win.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        // Next can commit before the browser captures the outgoing screen. Deliver
+        // its history event inside the snapshot callback so capture comes first.
+        event.stopImmediatePropagation();
+        engine.begin(engine.direction, engine.url(), () => {
+          const PopEvent = doc.defaultView!.PopStateEvent;
+          replayedPop = new PopEvent('popstate', { state });
+          engine.win.dispatchEvent(replayedPop);
+          replayedPop = undefined;
+        });
+      } else {
+        engine.begin(engine.direction, engine.url(), () => {});
+      }
     };
-    this.win.addEventListener('popstate', pop);
+    this.win.addEventListener('popstate', pop, true);
     this.rebuild();
     this.cleanup = () => {
       this.disconnected = true; this.release(); this.transition?.skipTransition(); this.clearTransitionBounds(); this.clearPins();
       if (history.pushState === wrappedPush) history.pushState = push;
       if (history.replaceState === wrappedReplace) history.replaceState = replace;
       history.scrollRestoration = oldRestoration;
-      this.win.removeEventListener('popstate', pop);
+      this.win.removeEventListener('popstate', pop, true);
       delete this.win.document.documentElement.dataset.stackflowDirection;
       delete this.win.document.documentElement.dataset.stackflowAnimating;
       this.cleanup = null;
@@ -178,7 +199,6 @@ export class NavigationEngine {
       rejectPending = reject;
     });
     pending.catch(() => {});
-    this.timeout = setTimeout(() => { this.release(); this.transition?.skipTransition(); }, this.options.timeout);
     let called = false;
     const run = () => {
       if (called || this.disconnected || generation !== this.generation) return Promise.resolve();
@@ -186,6 +206,12 @@ export class NavigationEngine {
       try { action(); } catch (error) { rejectPending(error); this.release(); }
       return pending;
     };
+    this.timeout = setTimeout(() => {
+      // A delayed snapshot must never prevent the navigation action from running.
+      void run().catch(() => {});
+      this.release();
+      this.transition?.skipTransition();
+    }, this.options.timeout);
     if (direction !== 'replace' && doc.startViewTransition && !reduced && this.options.animation !== 'none') {
       const viewport = this.viewport();
       const selectors = this.fixedSelectors();
