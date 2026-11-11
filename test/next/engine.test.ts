@@ -108,6 +108,40 @@ test('Next receives Back and Forward only after the outgoing snapshot is capture
   }
 });
 
+test('the slide waits for a visible loading boundary after the destination commits', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const content = win.document.createElement('main');
+  const loading = win.document.createElement('div');
+  loading.setAttribute('data-stackflow-loading', '');
+  Object.defineProperty(loading, 'getClientRects', { value: () => ({ length: 1 }) });
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => content as unknown as HTMLElement, {
+    animation: 'ios', preserveScroll: true, timeout: 500, maxEntries: 3, waitForPage: true,
+  });
+  let update: (() => Promise<void>) | undefined;
+  (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  engine.connect();
+  try {
+    engine.navigate('push', '/slow', () => {
+      win.history.pushState({}, '', '/slow');
+      content.append(loading);
+    });
+    assert.equal(engine.isPending(), true);
+    assert.equal(update, undefined);
+    await new Promise<void>(resolve => win.requestAnimationFrame(() => win.requestAnimationFrame(() => resolve())));
+    const pending = update!();
+    engine.commit('/slow');
+    assert.equal(engine.isPending(), true);
+    loading.remove();
+    await pending;
+    assert.equal(engine.isPending(), false);
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('modal routes rise on push and Forward and descend on Back', async () => {
   const win = new Window({ url: 'http://localhost/' });
   const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {

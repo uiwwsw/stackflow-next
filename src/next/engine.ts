@@ -27,6 +27,8 @@ export class NavigationEngine {
   private listeners = new Set<() => void>();
   private generation = 0;
   private finish: (() => void) | null = null;
+  private loadingObserver: MutationObserver | null = null;
+  private cancelLoadingPaint: (() => void) | undefined;
   private expected: string | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private transition: Transition | null = null;
@@ -69,11 +71,12 @@ export class NavigationEngine {
     others.slice(0,Math.max(0,others.length-1)).forEach(e=>{delete e.visual;});
   }
   constructor(readonly win: Window, readonly viewport: () => HTMLElement | null,
-    readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number },
+    readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number; waitForPage?: boolean },
     private readonly scrollElement = viewport,
     private readonly fixedTargets: () => readonly FixedTarget[] = () => [],
     private readonly modalRoutes: () => readonly string[] = () => []) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  isPending = () => this.finish !== null;
   private emit() { this.listeners.forEach(fn => fn()); }
   private remember(meta: {id: string; position: number}, url: string) {
     let entry = this.entries.get(meta.id);
@@ -177,7 +180,37 @@ export class NavigationEngine {
     ];
     this.stack = aggregate(events, Date.now()); this.emit();
   }
-  private release() { clearTimeout(this.timeout); this.finish?.(); this.finish = null; this.expected = null; delete this.win.document.documentElement.dataset.stackflowPending; }
+  private release() {
+    clearTimeout(this.timeout);
+    this.loadingObserver?.disconnect();
+    this.loadingObserver = null;
+    this.cancelLoadingPaint?.();
+    this.cancelLoadingPaint = undefined;
+    const finish = this.finish;
+    this.finish = null;
+    this.expected = null;
+    delete this.win.document.documentElement.dataset.stackflowPending;
+    finish?.();
+    if (finish) this.emit();
+  }
+  private finishWhenPageIsReady() {
+    const viewport = this.viewport();
+    const Observer = this.win.document.defaultView?.MutationObserver;
+    if (!this.options.waitForPage || !this.transition || !viewport || !Observer) {
+      this.release();
+      return;
+    }
+    const ready = () => !Array.from(viewport.querySelectorAll('[data-stackflow-loading]')).some(element => element.getClientRects().length > 0);
+    if (ready()) {
+      this.release();
+      return;
+    }
+    this.loadingObserver?.disconnect();
+    this.loadingObserver = new Observer(() => {
+      if (ready()) this.release();
+    });
+    this.loadingObserver.observe(viewport, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'style', 'class'] });
+  }
   private clearTransitionBounds() {
     this.stopWatchingBounds?.();
     this.stopWatchingBounds = undefined;
@@ -233,6 +266,7 @@ export class NavigationEngine {
       this.release();
       this.transition?.skipTransition();
     }, this.options.timeout);
+    this.emit();
     if ((direction !== 'replace' || modal) && doc.startViewTransition && !reduced && this.options.animation !== 'none') {
       const viewport = this.viewport();
       const selectors = modal ? [] : resolveFixedSelectors(this.fixedTargets(), from, href ?? this.url());
@@ -250,7 +284,7 @@ export class NavigationEngine {
       this.transitionBounds = viewport?.getBoundingClientRect();
       if (modal) dataset.stackflowModal = modal;
       dataset.stackflowAnimating = 'true';
-      try {
+      const start = () => { try {
         const transition = doc.startViewTransition(run); this.transition = transition;
         if (viewport) {
           const Observer = doc.defaultView?.ResizeObserver;
@@ -267,7 +301,17 @@ export class NavigationEngine {
         }
         transition.ready.catch(()=>{});
         transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; } });
-      } catch { this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; void run().catch(()=>{}); }
+      } catch { this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; void run().catch(()=>{}); } };
+      if (this.options.waitForPage && viewport) {
+        // Paint the loading UI before the browser freezes the outgoing frame.
+        let frame = this.win.requestAnimationFrame(() => {
+          frame = this.win.requestAnimationFrame(() => {
+            this.cancelLoadingPaint = undefined;
+            start();
+          });
+        });
+        this.cancelLoadingPaint = () => this.win.cancelAnimationFrame(frame);
+      } else start();
     } else { void run().catch(()=>{}); }
   }
   navigate(direction: Direction, href: string | null, action: () => void) {
@@ -287,7 +331,7 @@ export class NavigationEngine {
     if (meta) this.current = this.remember(meta,this.url());
     this.restoreScroll();
     this.checkTransitionBounds();
-    this.rebuild(); this.release();
+    this.rebuild(); this.finishWhenPageIsReady();
   }
   read<T>(key: string, fallback: T): T { return this.current?.values.has(key) ? this.current.values.get(key) as T : fallback; }
   write<T>(key: string, value: T) { this.current?.values.set(key,value); this.emit(); }

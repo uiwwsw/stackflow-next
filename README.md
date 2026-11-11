@@ -13,8 +13,8 @@ Install the current prerelease from npm.
 npm install @uiwwsw/stackflow-next@next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.11`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.11)
+The `next` tag currently points to `0.2.0-alpha.12`. See the
+[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.12)
 and [live demo](https://stackflow-next.vercel.app/).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
@@ -213,9 +213,21 @@ cache is memory-only and bounded by `maxEntries` (default 32).
 `useStack()` exposes Stackflow core's computed Stack; select `isTop` rather than
 assuming array order. Core computes navigation state; it does not render RSCs.
 
-Transitions finish at the new route's commit, which may be a Suspense fallback.
-Later streamed content remains free to render. No claim is made that every
-streamed chunk participates in one continuous transition. A navigation timeout
+By default the slide waits for the destination to render and any visible
+`StackLoading` boundaries to resolve. Use `<StackLoading />` in `loading.tsx`
+or as the `fallback` for a Suspense boundary whose content should be ready
+before the slide. Unmarked Suspense boundaries can continue streaming.
+
+```tsx
+<StackflowProvider loading={<span>Preparing your page…</span>}>
+  {children}
+</StackflowProvider>
+```
+
+`loading` sets the shared indicator and the default content of `StackLoading`.
+Pass children to `StackLoading` to customize a specific fallback. Pass
+`loading={null}` to hide the shared indicator, or `waitForPage={false}` to slide
+as soon as the destination first renders. A navigation timeout
 (default 4000ms) releases a stalled snapshot. Redirects and competing history or
 View Transition libraries require application-specific testing.
 

@@ -12,6 +12,20 @@ const Context = createContext<NavigationEngine | null | undefined>(undefined);
 function useEngine() { const engine=useContext(Context); if(engine===undefined) throw new Error('Wrap your layout in StackflowProvider'); return engine; }
 const noopSubscribe = () => () => {};
 const emptyStack = () => null;
+const idle = () => false;
+const defaultLoading = <span>Loading…</span>;
+const LoadingContext = createContext<ReactNode>(defaultLoading);
+
+/** Use in loading.tsx or a Suspense fallback for content that must be ready before the slide. */
+export function StackLoading({children}: {children?: ReactNode}) {
+  const loading = useContext(LoadingContext);
+  return <div data-stackflow-loading="" role="status">{children === undefined ? loading : children}</div>;
+}
+
+function NavigationLoading({engine, children}: {engine: NavigationEngine | null; children: ReactNode}) {
+  const pending = useSyncExternalStore(engine?.subscribe ?? noopSubscribe, engine?.isPending ?? idle, idle);
+  return pending && children != null ? <div className="stackflow-next-navigation-loading" role="status">{children}</div> : null;
+}
 function RouteObserver({engine}: {engine: NavigationEngine | null}) {
   const path=usePathname(), search=useSearchParams();
   const route=path + (search.toString() ? `?${search}` : '');
@@ -37,10 +51,14 @@ export interface StackflowProviderProps {
   swipeBack?: boolean;
   maxEntries?: number;
   navigationTimeout?: number;
+  /** Wait for visible StackLoading boundaries to finish before animating. Defaults to true. */
+  waitForPage?: boolean;
+  /** Content shown while navigation is pending and by StackLoading. Pass null to hide it. */
+  loading?: ReactNode;
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,loading=defaultLoading,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
   const modals = useRef<readonly string[]>([]);
@@ -70,29 +88,30 @@ export function StackflowProvider({children,header,footer,persistent,animation='
   useLayoutEffect(()=>{
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
-    const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries},
+    const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries,waitForPage},
       () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current);
     const disconnect=value.connect(); engineRef.current=value; setEngine(value);
     return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
-  },[animation,preserveScroll,maxEntries,navigationTimeout]);
+  },[animation,preserveScroll,maxEntries,navigationTimeout,waitForPage]);
   useLayoutEffect(()=>{
     if(!engine)return;
     engine.setSwipeBackEnabled(swipeBack);
     if(!swipeBack||!viewport.current)return;
     return attachSwipeBack(engine,viewport.current,()=>router.back());
   },[swipeBack,engine,router]);
-  return <Context.Provider value={engine}>
+  return <Context.Provider value={engine}><LoadingContext.Provider value={loading}>
     <div className={`stackflow-next ${className}`} style={style}>
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
         <div ref={viewport} className="stackflow-next-content">{children}</div>
         <div ref={indicator} className="stackflow-next-indicator" aria-hidden="true"/>
+        <NavigationLoading engine={engine}>{loading}</NavigationLoading>
       </div>
       {persistent != null && typeof persistent !== 'boolean' && <div className="stackflow-next-persistent">{persistent}</div>}
       {footer && <div className="stackflow-next-footer">{footer}</div>}
     </div>
     <Suspense fallback={null}><RouteObserver engine={engine}/></Suspense>
-  </Context.Provider>;
+  </LoadingContext.Provider></Context.Provider>;
 }
 export function useStackRouter() {
   const engine=useEngine(),router=useRouter();
