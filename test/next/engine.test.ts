@@ -38,7 +38,7 @@ test('a route commit accepts equivalent URL and search parameter encodings', () 
   }
 });
 
-test('rapid Back then Forward to the rendered route cancels the stale snapshot and preserves scroll', async () => {
+test('rapid Back then Forward animates the rendered route without waiting for another commit', async () => {
   const { engine, window, el } = setup();
   const callbacks: Array<() => Promise<void>> = [];
   const delivered: string[] = [];
@@ -64,13 +64,44 @@ test('rapid Back then Forward to the rendered route cancels the stale snapshot a
 
     replace.call(window.history, detail, '', '/detail');
     window.dispatchEvent(new window.PopStateEvent('popstate', { state: detail }));
+    assert.equal(engine.isPending(), true);
+    assert.equal(engine.direction, 'push');
+    assert.equal(callbacks.length, 2);
+    await callbacks[0]();
+    assert.deepEqual(delivered, []);
+    await callbacks[1]();
     assert.equal(engine.isPending(), false);
     assert.deepEqual(delivered, ['/detail']);
     assert.equal(el.scrollTop, 30);
     assert.equal(engine.entries.get(home[HISTORY_KEY].id)?.scroll, 120);
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('Back between entries for the same rendered route plays the reverse slide', async () => {
+  const { engine, window, el } = setup();
+  const callbacks: Array<() => Promise<void>> = [];
+  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    callbacks.push(callback);
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  try {
+    window.history.replaceState({ __NA: true }, '');
+    const first = window.history.state;
+    el.scrollTop = 120;
+    window.history.pushState({ __NA: true }, '', '/');
+    engine.commit('/');
+    el.scrollTop = 30;
+    engine.options.animation = 'ios';
+
+    Object.getPrototypeOf(window.history).replaceState.call(window.history, first, '', '/');
+    window.dispatchEvent(new window.PopStateEvent('popstate', { state: first }));
+    assert.equal(engine.direction, 'pop');
     assert.equal(callbacks.length, 1);
     await callbacks[0]();
-    assert.deepEqual(delivered, ['/detail']);
+    assert.equal(engine.isPending(), false);
+    assert.equal(el.scrollTop, 120);
   } finally {
     engine.dispose();
   }
