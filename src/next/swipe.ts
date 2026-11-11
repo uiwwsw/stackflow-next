@@ -35,7 +35,7 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
       dx: 0,
       previous,
       background: null,
-      fixed: engine.hasFixedTargets(),
+      fixed: engine.hasFixedTargets() || engine.hasModalBackTransition(),
       active: false,
     };
   };

@@ -21,6 +21,12 @@ html[data-stackflow-direction=pop]::view-transition-new(stackflow-next-content){
 @keyframes stackflow-retreat{from{transform:translateX(0)}to{transform:translateX(-25%)}}
 @keyframes stackflow-leave{from{transform:translateX(0)}to{transform:translateX(100%)}}
 @keyframes stackflow-return{from{transform:translateX(-25%)}to{transform:translateX(0)}}
+html[data-stackflow-direction][data-stackflow-modal=enter]::view-transition-old(stackflow-next-content){animation-name:none;z-index:1}
+html[data-stackflow-direction][data-stackflow-modal=enter]::view-transition-new(stackflow-next-content){animation-name:stackflow-modal-enter;z-index:2}
+html[data-stackflow-direction][data-stackflow-modal=exit]::view-transition-old(stackflow-next-content){animation-name:stackflow-modal-exit;z-index:2}
+html[data-stackflow-direction][data-stackflow-modal=exit]::view-transition-new(stackflow-next-content){animation-name:none;z-index:1}
+@keyframes stackflow-modal-enter{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes stackflow-modal-exit{from{transform:translateY(0)}to{transform:translateY(100%)}}
 @media(prefers-reduced-motion:reduce){::view-transition-group(stackflow-next-content),::view-transition-old(stackflow-next-content),::view-transition-new(stackflow-next-content){animation:none!important}}
 
 .stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:hidden}.stackflow-next-header,.stackflow-next-footer,.stackflow-next-persistent{flex:none}

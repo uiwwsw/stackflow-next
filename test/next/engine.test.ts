@@ -108,6 +108,83 @@ test('Next receives Back and Forward only after the outgoing snapshot is capture
   }
 });
 
+test('modal routes rise on push and Forward and descend on Back', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
+  }, () => null, () => [], () => ['/compose']);
+  const motions: (string | undefined)[] = [];
+  let update: (() => Promise<void>) | undefined;
+  (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    motions.push(win.document.documentElement.dataset.stackflowModal);
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  win.history.replaceState({ __NA: true }, '');
+  engine.connect();
+  try {
+    const home = win.history.state;
+    engine.navigate('push', '/compose?draft=1', () => win.history.pushState({ __NA: true }, '', '/compose?draft=1'));
+    const opened = update!();
+    engine.commit('/compose?draft=1');
+    await opened;
+    assert.equal(engine.hasModalBackTransition(), true);
+    const modal = win.history.state;
+    const replace = Object.getPrototypeOf(win.history).replaceState;
+    for (const [path, state] of [['/', home], ['/compose?draft=1', modal]] as const) {
+      replace.call(win.history, state, '', path);
+      win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
+      const pending = update!();
+      engine.commit(path);
+      await pending;
+    }
+    assert.deepEqual(motions, ['enter', 'exit', 'enter']);
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('Back keeps sliding when the previous page brings back a fixed navigation bar', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const content = win.document.createElement('main');
+  const nav = win.document.createElement('nav');
+  content.getBoundingClientRect = () => new win.DOMRect(0, 0, 400, 600);
+  nav.getBoundingClientRect = () => new win.DOMRect(0, 0, 400, 40);
+  Object.defineProperty(nav, 'getClientRects', { value: () => ({ length: 1 }) });
+  const viewport = () => content as unknown as HTMLElement;
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, viewport, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
+  }, viewport, () => ['nav']);
+  win.history.replaceState({ __NA: true }, '');
+  engine.connect();
+  try {
+    const home = win.history.state;
+    win.history.pushState({ __NA: true }, '', '/checkout');
+    engine.commit('/checkout');
+
+    let capture: (() => Promise<void>) | undefined;
+    let skipped = false;
+    (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+      capture = callback;
+      return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() { skipped = true; } };
+    };
+    win.addEventListener('popstate', () => {
+      content.append(nav);
+      engine.commit('/');
+    });
+
+    Object.getPrototypeOf(win.history).replaceState.call(win.history, home, '', '/');
+    win.dispatchEvent(new win.PopStateEvent('popstate', { state: home }));
+    await capture!();
+    assert.equal(engine.direction, 'pop');
+    assert.equal(nav.parentElement, content);
+    assert.equal(nav.hasAttribute('data-stackflow-fixed-target'), false);
+    assert.equal(skipped, false);
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('navigation without swipe back does not clone the previous screen', () => {
   const { engine, window, el } = setup();
   try {

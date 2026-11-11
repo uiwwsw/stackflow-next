@@ -6,8 +6,12 @@ export type FixedTarget = string | {
   exceptRoutes: readonly string[];
 };
 
+export function routePathname(url: string) {
+  return url.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
+}
+
 export function resolveFixedSelectors(targets: readonly FixedTarget[], from: string, to: string) {
-  const pathname = (url: string) => url.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
+  const pathname = routePathname;
   const source = pathname(from);
   const destination = pathname(to);
   return targets.flatMap(target => {
@@ -52,7 +56,9 @@ export function pinForTransition(content: HTMLElement, targets: ReadonlySet<HTML
   for (const {element} of elements) element.setAttribute(marker, '');
   return {
     stable(next: ReadonlySet<HTMLElement>) {
-      return next.size === elements.length && elements.every(({element, rect}) => {
+      // Targets that appear on the destination were never pinned. They can
+      // enter with the destination snapshot without affecting existing pins.
+      return elements.every(({element, rect}) => {
         if (!next.has(element)) return false;
         const after = element.getBoundingClientRect();
         return (['top', 'left', 'right', 'bottom'] as const).every(edge => Math.abs(rect[edge] - after[edge]) <= .5);
