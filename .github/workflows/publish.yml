@@ -44,7 +44,15 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run check
+      - name: Pack and verify the release
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          SCRATCH_DIR="$RUNNER_TEMP" node scripts/verify-release.mjs "$RUNNER_TEMP/uiwwsw-stackflow-next-$RELEASE_VERSION.tgz"
       - name: Publish to npm
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           tag=$(node -p 'require("./package.json").version.includes("-") ? "next" : "latest"')
-          npm publish --access public --tag "$tag" --registry=https://registry.npmjs.org
+          npm publish "$RUNNER_TEMP/uiwwsw-stackflow-next-$RELEASE_VERSION.tgz" --access public --tag "$tag" --registry=https://registry.npmjs.org

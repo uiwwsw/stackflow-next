@@ -1,3 +1,9 @@
+:where(:root){
+  --stackflow-duration:280ms;
+  --stackflow-easing:cubic-bezier(.2,.7,.2,1);
+  --stackflow-slide-x:100% 0;
+  --stackflow-slide-y:0 100%;
+}
 .stackflow-next{display:flex;flex-direction:column;position:relative;min-height:0;height:100%;overflow:hidden;isolation:isolate}
 .stackflow-next,.stackflow-next-content,.stackflow-next-viewport{background-color:Canvas;background-image:linear-gradient(var(--stackflow-background,transparent),var(--stackflow-background,transparent))}
 .stackflow-next-content{height:100%}
@@ -13,22 +19,52 @@ html[data-stackflow-animating]{view-transition-name:none}
 /* Keep browser-generated size/position interpolation off the horizontal slide. */
 ::view-transition-group(stackflow-next-content),::view-transition-image-pair(stackflow-next-content){animation-name:none}
 ::view-transition-group(stackflow-next-content){overflow:hidden}
-::view-transition-old(stackflow-next-content),::view-transition-new(stackflow-next-content){animation-duration:var(--stackflow-duration,280ms);animation-timing-function:cubic-bezier(.2,.7,.2,1);animation-fill-mode:both;mix-blend-mode:normal}
+::view-transition-old(stackflow-next-content),::view-transition-new(stackflow-next-content){animation-duration:var(--stackflow-duration);animation-timing-function:var(--stackflow-easing);animation-fill-mode:both;mix-blend-mode:normal}
 html[data-stackflow-direction=push]::view-transition-old(stackflow-next-content){animation-name:stackflow-retreat}
 html[data-stackflow-direction=push]::view-transition-new(stackflow-next-content){animation-name:stackflow-enter}
 html[data-stackflow-direction=pop]::view-transition-old(stackflow-next-content){animation-name:stackflow-leave;z-index:2}
 html[data-stackflow-direction=pop]::view-transition-new(stackflow-next-content){animation-name:stackflow-return;z-index:1}
-@keyframes stackflow-enter{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes stackflow-enter{from{translate:var(--stackflow-slide-x)}to{translate:0 0}}
 @keyframes stackflow-retreat{from{transform:translateX(0)}to{transform:translateX(-25%)}}
-@keyframes stackflow-leave{from{transform:translateX(0)}to{transform:translateX(100%)}}
+@keyframes stackflow-leave{from{translate:0 0}to{translate:var(--stackflow-slide-x)}}
 @keyframes stackflow-return{from{transform:translateX(-25%)}to{transform:translateX(0)}}
 html[data-stackflow-direction][data-stackflow-modal=enter]::view-transition-old(stackflow-next-content){animation-name:none;z-index:1}
 html[data-stackflow-direction][data-stackflow-modal=enter]::view-transition-new(stackflow-next-content){animation-name:stackflow-modal-enter;z-index:2}
 html[data-stackflow-direction][data-stackflow-modal=exit]::view-transition-old(stackflow-next-content){animation-name:stackflow-modal-exit;z-index:2}
 html[data-stackflow-direction][data-stackflow-modal=exit]::view-transition-new(stackflow-next-content){animation-name:none;z-index:1}
-@keyframes stackflow-modal-enter{from{transform:translateY(100%)}to{transform:translateY(0)}}
-@keyframes stackflow-modal-exit{from{transform:translateY(0)}to{transform:translateY(100%)}}
+@keyframes stackflow-modal-enter{from{translate:var(--stackflow-slide-y)}to{translate:0 0}}
+@keyframes stackflow-modal-exit{from{translate:0 0}to{translate:var(--stackflow-slide-y)}}
 @media(prefers-reduced-motion:reduce){::view-transition-group(stackflow-next-content),::view-transition-old(stackflow-next-content),::view-transition-new(stackflow-next-content){animation:none!important}}
+
+:is([data-sfn-enter],[data-sfn-exit])[hidden]{display:none!important;pointer-events:none}
+:is([data-sfn-enter],[data-sfn-exit]){
+  --sfn-enter-offset:var(--stackflow-slide-x);
+  --sfn-exit-offset:var(--stackflow-slide-x);
+  --sfn-enter-duration:var(--stackflow-duration);
+  --sfn-exit-duration:var(--stackflow-duration);
+}
+[data-sfn-enter="modal"]{--sfn-enter-offset:var(--stackflow-slide-y)}
+[data-sfn-exit="modal"]{--sfn-exit-offset:var(--stackflow-slide-y)}
+[data-sfn-enter="none"]{--sfn-enter-duration:0s}
+[data-sfn-exit="none"]{--sfn-exit-duration:0s}
+@supports (transition-behavior:allow-discrete){
+  @media (prefers-reduced-motion:no-preference){
+    :is([data-sfn-enter],[data-sfn-exit]){
+      transition-property:translate,display;
+      transition-duration:var(--sfn-enter-duration);
+      transition-timing-function:var(--stackflow-easing);
+      transition-behavior:allow-discrete;
+      translate:none;
+    }
+    :is([data-sfn-enter],[data-sfn-exit])[hidden]{
+      transition-duration:var(--sfn-exit-duration);
+      translate:var(--sfn-exit-offset);
+    }
+    @starting-style{
+      :is([data-sfn-enter],[data-sfn-exit]):not([hidden]){translate:var(--sfn-enter-offset)}
+    }
+  }
+}
 
 .stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:hidden}.stackflow-next-header,.stackflow-next-footer,.stackflow-next-persistent{flex:none}
 /* Keep controls responsive while the browser paints the visual snapshot layer. */

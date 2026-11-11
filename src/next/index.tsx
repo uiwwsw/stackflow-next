@@ -8,6 +8,7 @@ import { attachScrollViewport } from './scroll.js';
 import type { FixedTarget } from './fixed-targets.js';
 export type { FixedTarget } from './fixed-targets.js';
 export type { RouteTransition } from './engine.js';
+export { StackMotion, type StackMotionPreset, type StackMotionProps } from './motion.js';
 
 const Context = createContext<NavigationEngine | null | undefined>(undefined);
 function useEngine() { const engine=useContext(Context); if(engine===undefined) throw new Error('Wrap your layout in StackflowProvider'); return engine; }
@@ -41,9 +42,9 @@ export interface StackflowProviderProps {
   scrollTarget?: string;
   /** CSS selectors for shared elements inside the page that should not slide. */
   fixedTargets?: FixedTarget | readonly FixedTarget[];
-  /** Routes presented as full-height modal pages. */
+  /** Pathnames presented as full-height modal pages. */
   modalRoutes?: readonly string[];
-  /** First matching animation override for an app pathname and optional query values. */
+  /** First matching animation override for an app pathname. */
   transitionRoutes?: readonly RouteTransition[];
   /** @deprecated Remove this prop. The full page is always the transition surface. */
   transitionTarget?: string;
@@ -52,7 +53,7 @@ export interface StackflowProviderProps {
   navigationTimeout?: number;
   /** Wait for visible StackLoading boundaries to finish before animating. Defaults to true. */
   waitForPage?: boolean;
-  /** Destinations that can slide in with their loading fallback visible. */
+  /** Pathnames that can slide in with their loading fallback visible. */
   skeletonRoutes?: readonly string[];
   /** Default content for StackLoading. Pass null for an invisible readiness marker. */
   loading?: ReactNode;

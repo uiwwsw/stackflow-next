@@ -2,7 +2,7 @@ const marker = 'data-stackflow-fixed-target';
 
 export type FixedTarget = string | {
   selector: string;
-  /** Routes on either side of a transition where this element should slide. */
+  /** Pathnames on either side of a transition where this element should slide. */
   exceptRoutes: readonly string[];
 };
 
@@ -11,25 +11,7 @@ export function routePathname(url: string) {
 }
 
 export function matchesRoute(rule: string, href: string) {
-  if (routePathname(rule) !== routePathname(href)) return false;
-  if (!rule.includes('?')) return true;
-  const query = (url: string) => {
-    const withoutHash = url.split('#', 1)[0];
-    const start = withoutHash.indexOf('?');
-    return new URLSearchParams(start < 0 ? '' : withoutHash.slice(start + 1));
-  };
-  const required = query(rule);
-  if (required.size === 0) return true;
-  const actual = query(href);
-  const remaining = new Map<string, string[]>();
-  for (const [key, value] of required) {
-    const values = remaining.get(key) ?? actual.getAll(key);
-    const index = values.indexOf(value);
-    if (index < 0) return false;
-    values.splice(index, 1);
-    remaining.set(key, values);
-  }
-  return true;
+  return !rule.split('#', 1)[0].includes('?') && routePathname(rule) === routePathname(href);
 }
 
 export function resolveFixedSelectors(targets: readonly FixedTarget[], from: string, to: string) {

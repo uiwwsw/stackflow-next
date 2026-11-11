@@ -75,6 +75,51 @@ test('rapid Back then Forward to the rendered route cancels the stale snapshot a
   }
 });
 
+test('two quick Back events capture the rendered route when the intermediate entry has no animation', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
+  }, () => null, () => [], () => [], () => [], () => [{ href: '/instant', animation: 'none' }]);
+  const callbacks: Array<() => Promise<void>> = [];
+  const delivered: string[] = [];
+  win.addEventListener('popstate', () => delivered.push(win.location.pathname));
+  (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    callbacks.push(callback);
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  win.history.replaceState({ __NA: true }, '');
+  engine.connect();
+  try {
+    const home = win.history.state;
+    win.history.pushState({ __NA: true }, '', '/instant');
+    engine.commit('/instant');
+    const instant = win.history.state;
+    win.history.pushState({ __NA: true }, '', '/detail');
+    engine.commit('/detail');
+
+    const replace = Object.getPrototypeOf(win.history).replaceState;
+    replace.call(win.history, instant, '', '/instant');
+    win.dispatchEvent(new win.PopStateEvent('popstate', { state: instant }));
+    assert.deepEqual(delivered, ['/instant']);
+    assert.equal(callbacks.length, 0);
+
+    // The router has received the first event but still shows /detail.
+    replace.call(win.history, home, '', '/');
+    win.dispatchEvent(new win.PopStateEvent('popstate', { state: home }));
+    assert.deepEqual(delivered, ['/instant']);
+    assert.equal(callbacks.length, 1);
+    assert.equal(engine.direction, 'pop');
+
+    const pending = callbacks[0]();
+    assert.deepEqual(delivered, ['/instant', '/']);
+    engine.commit('/');
+    await pending;
+    assert.equal(engine.isPending(), false);
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('a canonical trailing slash does not interrupt the destination transition', async () => {
   const { engine, window } = setup();
   let update: (() => Promise<void>) | undefined;
@@ -140,14 +185,14 @@ test('a route that commits before the new navigation action leaves the new trans
   }
 });
 
-test('query motion survives a base path, browser history traversal and modal close by replace', async () => {
+test('query changes under a base path use ordinary history and ignore legacy query rules', async () => {
   const win = new Window({ url: 'http://localhost/app/detail?city=seoul' });
   const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 8,
   }, () => null, () => [], () => [], () => [], () => [
     { href: '/detail?panel=map', animation: 'modal' },
     { href: '/detail?panel=quiet', animation: 'none' },
-    { href: '/detail?panel=info', animation: 'ios' },
+    { href: '/editor', animation: 'ios' },
   ]);
   const motion: (string | undefined)[] = [];
   let update: (() => Promise<void>) | undefined;
@@ -165,34 +210,35 @@ test('query motion survives a base path, browser history traversal and modal clo
     const detail = win.history.state;
     const map = '/detail?city=seoul&panel=map';
     engine.navigate('push', map, () => win.history.pushState({ __NA: true }, '', '/app' + map));
-    let pending = update!();
+    const opened = update!();
     engine.commit(map);
-    await pending;
+    await opened;
+    assert.equal(engine.current?.url, '/app' + map);
     const mapState = win.history.state;
 
     const replace = Object.getPrototypeOf(win.history).replaceState;
     for (const [path, state] of [['/detail?city=seoul', detail], [map, mapState]] as const) {
       replace.call(win.history, state, '', '/app' + path);
       win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
-      pending = update!();
+      const pending = update!();
       engine.commit(path);
       await pending;
+      assert.equal(engine.current?.url, '/app' + path);
     }
 
-    engine.navigate('replace', '/detail?city=seoul', () => win.history.replaceState({ __NA: true }, '', '/app/detail?city=seoul'));
-    pending = update!();
-    engine.commit('/detail?city=seoul');
-    await pending;
+    const quiet = '/detail?panel=quiet';
+    engine.navigate('push', quiet, () => win.history.pushState({ __NA: true }, '', '/app' + quiet));
+    const openedQuiet = update!();
+    engine.commit(quiet);
+    await openedQuiet;
 
-    engine.navigate('replace', '/detail?panel=info', () => win.history.replaceState({ __NA: true }, '', '/app/detail?panel=info'));
-    pending = update!();
-    engine.commit('/detail?panel=info');
-    await pending;
-
-    engine.navigate('push', '/detail?panel=quiet', () => win.history.pushState({ __NA: true }, '', '/app/detail?panel=quiet'));
-    engine.commit('/detail?panel=quiet');
+    const editor = '/editor?draft=1';
+    engine.navigate('replace', editor, () => win.history.replaceState({ __NA: true }, '', '/app' + editor));
+    const replaced = update!();
+    engine.commit(editor);
+    await replaced;
     assert.equal(engine.isPending(), false);
-    assert.deepEqual(motion, ['enter', 'exit', 'enter', 'exit', 'push']);
+    assert.deepEqual(motion, ['push', 'pop', 'push', 'push', 'push']);
   } finally {
     engine.dispose();
   }
@@ -208,12 +254,13 @@ test('opening or reloading a page does not animate; in-app push, Back and Forwar
   const makeEngine = () => new NavigationEngine(win as unknown as globalThis.Window, () => null, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
   });
+  win.history.replaceState({ __NA: true }, '');
   const first = makeEngine();
   first.connect();
   first.commit('/detail');
   assert.deepEqual(directions, []);
   const detail = win.history.state;
-  first.navigate('push', '/next', () => win.history.pushState({}, '', '/next'));
+  first.navigate('push', '/next', () => win.history.pushState({ __NA: true }, '', '/next'));
   await Promise.resolve();
   first.commit('/next');
   const next = win.history.state;
@@ -229,11 +276,45 @@ test('opening or reloading a page does not animate; in-app push, Back and Forwar
     for (const [path, state] of [['/detail', detail], ['/next', next]] as const) {
       replace.call(win.history, state, '', path);
       win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
+      await Promise.resolve();
       reloaded.commit(path);
     }
     assert.deepEqual(directions, ['push', 'pop', 'push']);
   } finally {
     reloaded.dispose();
+  }
+});
+
+test('an aborted browser snapshot still delivers Back once without waiting for the timeout', async () => {
+  const { engine, window } = setup();
+  let callback: (() => Promise<void>) | undefined;
+  let delivered = 0;
+  window.addEventListener('popstate', () => { delivered++; });
+  try {
+    window.history.replaceState({ __NA: true }, '');
+    const home = window.history.state;
+    window.history.pushState({ __NA: true }, '', '/detail');
+    engine.commit('/detail');
+    engine.options.animation = 'ios';
+    (window.document as any).startViewTransition = (update: () => Promise<void>) => {
+      callback = update;
+      return {
+        ready: Promise.reject(new Error('Capture aborted')),
+        finished: new Promise(() => {}),
+        skipTransition() {},
+      };
+    };
+    Object.getPrototypeOf(window.history).replaceState.call(window.history, home, '', '/');
+    window.dispatchEvent(new window.PopStateEvent('popstate', { state: home }));
+    assert.equal(delivered, 0);
+    await Promise.resolve();
+    assert.equal(delivered, 1);
+    engine.commit('/');
+    await callback!();
+    assert.equal(delivered, 1);
+    assert.equal(engine.isPending(), false);
+  } finally {
+    engine.dispose();
   }
 });
 
@@ -354,7 +435,7 @@ test('the slide waits for a visible loading boundary after the destination commi
   }
 });
 
-test('a query-selected skeleton route slides with the loading boundary still visible', async () => {
+test('only a pathname skeleton rule releases the transition while its loading boundary is visible', async () => {
   const win = new Window({ url: 'http://localhost/' });
   const viewport = win.document.createElement('main');
   const loading = win.document.createElement('div');
@@ -363,7 +444,7 @@ test('a query-selected skeleton route slides with the loading boundary still vis
   const getViewport = () => viewport as unknown as HTMLElement;
   const engine = new NavigationEngine(win as unknown as globalThis.Window, getViewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3, waitForPage: true,
-  }, getViewport, () => [], () => [], () => ['/skeleton?q=one']);
+  }, getViewport, () => [], () => [], () => ['/skeleton', '/legacy-skeleton?q=one']);
   let update: (() => Promise<void>) | undefined;
   (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
     update = callback;
@@ -381,6 +462,19 @@ test('a query-selected skeleton route slides with the loading boundary still vis
     assert.equal(engine.isPending(), false);
     assert.equal(viewport.contains(loading), true);
     await pending;
+
+    loading.remove();
+    const legacy = '/legacy-skeleton?q=one';
+    engine.navigate('push', legacy, () => {
+      win.history.pushState({}, '', legacy);
+      viewport.append(loading);
+    });
+    const waiting = update!();
+    engine.commit(legacy);
+    assert.equal(engine.isPending(), true);
+    loading.remove();
+    await waiting;
+    assert.equal(engine.isPending(), false);
   } finally {
     engine.dispose();
   }
