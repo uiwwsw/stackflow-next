@@ -7,6 +7,8 @@
 .stackflow-next :where(input,textarea,[contenteditable=true],[data-selectable]){user-select:text;-webkit-touch-callout:default}
 .stackflow-next-indicator{position:absolute;top:0;right:3px;width:3px;z-index:10;border-radius:3px;background:var(--stackflow-indicator,#8888);pointer-events:none;opacity:0;transition:opacity .15s}
 html[data-stackflow-direction]::view-transition-old(root),html[data-stackflow-direction]::view-transition-new(root){animation:none}
+/* Capture the moving body without including the shared slot in a root snapshot. */
+html[data-stackflow-animating]:has(.stackflow-next > .stackflow-next-persistent){view-transition-name:none}
 ::view-transition-group(stackflow-next-content){animation-duration:var(--stackflow-duration,280ms);overflow:hidden}
 ::view-transition-old(stackflow-next-content),::view-transition-new(stackflow-next-content){animation-duration:var(--stackflow-duration,280ms);animation-timing-function:cubic-bezier(.2,.7,.2,1);mix-blend-mode:normal}
 html[data-stackflow-direction=push]::view-transition-old(stackflow-next-content){animation-name:stackflow-retreat}
@@ -21,7 +23,7 @@ html[data-stackflow-direction=replace]::view-transition-old(stackflow-next-conte
 @keyframes stackflow-fade{to{opacity:0}}
 @media(prefers-reduced-motion:reduce){::view-transition-group(stackflow-next-content),::view-transition-old(stackflow-next-content),::view-transition-new(stackflow-next-content){animation:none!important}}
 
-.stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:hidden}.stackflow-next-header,.stackflow-next-footer{flex:none}
+.stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:hidden}.stackflow-next-header,.stackflow-next-footer,.stackflow-next-persistent{flex:none}
 /* Keep controls responsive while the browser paints the visual snapshot layer. */
 html[data-stackflow-direction]::view-transition{pointer-events:none}
 html[data-stackflow-direction]::view-transition-group(*),

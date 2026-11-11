@@ -47,6 +47,26 @@ test('navigation without swipe back does not clone the previous screen', () => {
   }
 });
 
+test('snapshot styles are active before capture and clear if starting a transition fails', () => {
+  const { engine, window } = setup();
+  const root = window.document.documentElement;
+  let captureStyle: string | undefined;
+  (window.document as any).startViewTransition = () => {
+    captureStyle = root.dataset.stackflowAnimating;
+    throw new Error('Transition unavailable');
+  };
+  engine.options.animation = 'ios';
+  try {
+    engine.navigate('push', '/detail', () => window.history.pushState({}, '', '/detail'));
+    engine.commit('/detail');
+    assert.equal(captureStyle, 'true');
+    assert.equal(root.dataset.stackflowAnimating, undefined);
+    assert.equal(window.location.pathname, '/detail');
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('back restores the selected region and keeps its position in the swipe preview', () => {
   const win = new Window({ url: 'http://localhost/' });
   const body = win.document.createElement('div');

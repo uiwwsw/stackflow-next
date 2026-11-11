@@ -20,6 +20,8 @@ export interface StackflowProviderProps {
   children: ReactNode;
   header?: ReactNode;
   footer?: ReactNode;
+  /** Shared UI rendered below the scrolling viewport and above the footer. */
+  persistent?: ReactNode;
   animation?: 'ios' | 'none';
   preserveScroll?: boolean;
   /** CSS selector for a single visible scroll region inside the provider body. */
@@ -30,7 +32,7 @@ export interface StackflowProviderProps {
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,animation='ios',preserveScroll=true,scrollTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const indicator=useRef<HTMLDivElement>(null);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
@@ -65,6 +67,7 @@ export function StackflowProvider({children,header,footer,animation='ios',preser
         <div ref={viewport} className="stackflow-next-content">{children}</div>
         <div ref={indicator} className="stackflow-next-indicator" aria-hidden="true"/>
       </div>
+      {persistent != null && typeof persistent !== 'boolean' && <div className="stackflow-next-persistent">{persistent}</div>}
       {footer && <div className="stackflow-next-footer">{footer}</div>}
     </div>
     <Suspense fallback={null}><RouteObserver engine={engine}/></Suspense>

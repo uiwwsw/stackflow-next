@@ -13,8 +13,8 @@ Install the current prerelease from npm.
 npm install @uiwwsw/stackflow-next@next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.4`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.4)
+The `next` tag currently points to `0.2.0-alpha.5`. See the
+[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.5)
 and [live demo](https://stackflow-next.vercel.app/).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
@@ -98,6 +98,23 @@ native scrolling with a visual indicator inside its bounds. Keep the selector
 unique within the visible screen; hidden routes retained by Next do not count.
 An invalid selector or a selector with zero or multiple visible matches falls
 back to the provider body and logs a warning in development.
+
+## Keep shared UI mounted
+
+Pass shared controls such as an audio player to `persistent` in a shared
+`app/layout.tsx`:
+
+```tsx
+<StackflowProvider persistent={<MiniPlayer />} swipeBack>
+  {children}
+</StackflowProvider>
+```
+
+The slot is below the scrolling viewport and above the footer. It stays mounted
+with the layout, so its DOM and local React state survive navigation between
+pages that share that layout. The slot sits outside the page transition and swipe
+preview. Reloading or leaving the shared layout still unmounts it. Keep the
+component type and key stable across routes.
 
 ## Interactive back gesture
 
