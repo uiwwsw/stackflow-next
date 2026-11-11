@@ -67,45 +67,6 @@ test('snapshot styles are active before capture and clear if starting a transiti
   }
 });
 
-test('an existing layout uses only its element transition and keeps document scroll native', async () => {
-  const { engine, window, el } = setup();
-  engine.dispose();
-  window.history.scrollRestoration = 'auto';
-  const scoped = new NavigationEngine(window as unknown as globalThis.Window, () => el as unknown as HTMLElement,
-    { animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3, existingLayout: true }, () => null);
-  scoped.connect();
-  let documentCalls = 0;
-  (window.document as any).startViewTransition = () => { documentCalls++; };
-  try {
-    scoped.navigate('push', '/fallback', () => window.history.pushState({}, '', '/fallback'));
-    scoped.commit('/fallback');
-    assert.equal(window.location.pathname, '/fallback');
-    assert.equal(window.history.scrollRestoration, 'auto');
-    assert.equal(scoped.scrollOptions(), undefined);
-
-    let update: (() => Promise<void>) | undefined;
-    let finish: (() => void) | undefined;
-    let receiver: unknown;
-    (el as any).startViewTransition = function(callback: () => Promise<void>) {
-      receiver = this;
-      update = callback;
-      return { ready: Promise.resolve(), finished: new Promise<void>(resolve => { finish = resolve; }), skipTransition() {} };
-    };
-    scoped.navigate('push', '/animated', () => window.history.pushState({}, '', '/animated'));
-    assert.equal(receiver, el);
-    assert.equal(el.hasAttribute('data-stackflow-scoped-target'), true);
-    const pending = update!();
-    scoped.commit('/animated');
-    await pending;
-    finish!();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(el.hasAttribute('data-stackflow-scoped-target'), false);
-    assert.equal(documentCalls, 0);
-  } finally {
-    scoped.dispose();
-  }
-});
-
 test('a change in the vertical viewport bounds skips the snapshot, not navigation', async () => {
   const { engine, window, el } = setup();
   let top = 48;

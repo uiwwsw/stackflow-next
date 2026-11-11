@@ -11,6 +11,8 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
     dx: number;
     previous: HTMLElement;
     background: HTMLElement | null;
+    fixed: boolean;
+    active: boolean;
   } | null = null;
   let unsubscribe: (()=>void)|undefined;
   let timer: ReturnType<typeof setTimeout>|undefined;
@@ -33,6 +35,8 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
       dx: 0,
       previous,
       background: null,
+      fixed: engine.hasFixedTargets(),
+      active: false,
     };
   };
 
@@ -61,7 +65,7 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
   const move=(event:PointerEvent)=>{
     const saved=gesture;if(!saved||saved.id!==event.pointerId||settling)return;
     const dx=Math.max(0,event.clientX-saved.x),dy=Math.abs(event.clientY-saved.y);
-    if (!saved.background) {
+    if (!saved.active) {
       if (dy > 12 && dy > dx) {
         reset();
         return;
@@ -73,18 +77,25 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
         return;
       }
       content.setPointerCapture?.(event.pointerId);
-      saved.background = mountPreview(saved.previous, parent);
+      saved.active = true;
+      if (!saved.fixed) saved.background = mountPreview(saved.previous, parent);
     }
     saved.dx = Math.min(content.clientWidth, dx);
     if (event.cancelable) event.preventDefault();
+    if (!saved.background) return;
     content.style.transform=`translateX(${saved.dx}px)`;
     saved.background.style.transform=`translateX(${-25+25*saved.dx/Math.max(content.clientWidth,1)}%)`;
   };
   const finish=async(cancelled:boolean)=>{
     const saved=gesture;if(!saved||settling)return;
-    if(!saved.background){reset();return;}settling=true;
+    if(!saved.active){reset();return;}settling=true;
     const width=content.clientWidth,velocity=saved.dx/Math.max(1,performance.now()-saved.time);
     const commit=!cancelled&&(saved.dx>width*.35||(saved.dx>30&&velocity>.5));
+    if (!saved.background) {
+      reset();
+      if (commit) back();
+      return;
+    }
     const target=commit?width:0;
     const reduced=win.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if(content.animate&&!reduced){

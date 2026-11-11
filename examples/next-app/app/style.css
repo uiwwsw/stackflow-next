@@ -11,3 +11,5 @@ h1{white-space:normal}.lead{word-break:keep-all}
 .demo-scroll-body{height:100%;margin-inline:6px}
 
 .demo-timer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 20px;background:#f6f8f5;border-top:1px solid var(--border);font-size:14px;font-weight:700}.demo-timer output{font-variant-numeric:tabular-nums;color:var(--green);margin-left:6px}.demo-timer button{font-size:14px;font-weight:700;background:white;color:var(--green);border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer}
+
+.demo-page-shell{height:100%;display:flex;flex-direction:column}.demo-page-shell .demo-scroll-body{flex:1;min-height:0;height:auto}.demo-page-shell>[data-demo-fixed]{flex:none}

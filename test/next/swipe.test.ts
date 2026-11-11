@@ -22,3 +22,21 @@ test('an edge press does not mount the previous screen before horizontal intent'
     engine.dispose();
   }
 });
+
+test('edge swipe with fixed targets navigates on release without moving the live DOM', () => {
+  const { engine, el, parent, pointer, detach, backs } = setup();
+  engine.hasFixedTargets = () => true;
+  try {
+    pointer('pointerdown', 2);
+    pointer('pointermove', 200);
+    assert.equal(parent.children.length, 1);
+    assert.equal(el.style.transform, '');
+    assert.equal(backs(), 0);
+    pointer('pointerup', 200);
+    assert.equal(backs(), 1);
+    assert.equal(engine.skipNextPopAnimation, false);
+  } finally {
+    detach();
+    engine.dispose();
+  }
+});

@@ -13,8 +13,8 @@ Install the current prerelease from npm.
 npm install @uiwwsw/stackflow-next@next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.7`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.7)
+The `next` tag currently points to `0.2.0-alpha.8`. See the
+[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.8)
 and [live demo](https://stackflow-next.vercel.app/).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
@@ -83,35 +83,34 @@ export function Actions() {
 - Control selection, callout and tap-highlight styling is scoped to controls;
   editable fields and `data-selectable` retain selection.
 
-## Keep an existing layout
+## Keep selected elements still
 
-If your app already has sticky or fixed UI and an existing scroll region, pass
-`transitionTarget` to use that layout without rendering any provider wrappers.
-Select a single visible element that stays mounted in the shared layout.
+The full page is the transition surface. To exclude existing shared elements
+inside it, pass one CSS selector or an array to `fixedTargets`:
 
 ```tsx
-<StackflowProvider transitionTarget="[data-app-screen]" scrollTarget="[data-app-scroll]">
-  <AppHeader />
-  <main data-app-screen>
-    <section data-app-scroll className="existing-scroll-region">{children}</section>
-  </main>
-  <MiniPlayer />
+<StackflowProvider fixedTargets={['[data-stack-fixed]', '#mini-player']}>
+  <div data-stack-fixed><FilterBar /></div>
+  {children}
+  <div id="mini-player"><MiniPlayer /></div>
 </StackflowProvider>
 ```
 
-The optional `scrollTarget` observes an existing element with `overflow-y: auto`
-or `scroll`; it adds a visual indicator and restores the offset without changing
-the element's CSS or hiding its native scrollbar. Omit it to keep Next's document
-scroll behavior. Use `StackLink` or `useStackRouter` for animated navigation.
+Place shared targets in the layout so the same elements remain mounted and keep
+the same bounds across routes. The option does not change their CSS positioning.
+If a selected element moves, is replaced, is clipped by the viewport, or the
+browser cannot isolate it from the page capture, navigation skips the slide.
+With `fixedTargets` configured, an edge swipe triggers Back on release without
+dragging the live page. Existing `header`, `footer`, and `persistent` slots remain
+outside the slide automatically.
 
-Browsers with element-scoped View Transitions animate the selected region.
-If the API is unavailable or the selector does not uniquely match, navigation
-continues normally. The selected node should contain the moving content only;
-place controls that must remain live outside it. The provider's `header`,
-`footer`, `persistent`, `className`, `style` and interactive `swipeBack` options
-apply to the default wrapper and are not used with `transitionTarget`.
+If you installed `0.2.0-alpha.7` and used `transitionTarget`, upgrade and remove
+that prop. Restore the bounded-height provider layout shown above under Install
+and configure. Leave `fixedTargets` out to slide the entire page, or use it to
+keep specific shared elements still. The old prop is ignored and logs a migration
+warning in development.
 
-## Choose which area scrolls in the default wrapper
+## Choose which area scrolls
 
 By default, the provider body scrolls. Use `scrollTarget` to delegate scrolling,
 the indicator, and scroll restoration to one visible HTML element inside it.

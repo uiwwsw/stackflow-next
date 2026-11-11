@@ -1,0 +1,48 @@
+const marker = 'data-stackflow-fixed-target';
+
+export function findFixedTargets(content: HTMLElement | null, selectors: readonly string[]) {
+  const targets = new Set<HTMLElement>();
+  if (!content || !selectors.length) return targets;
+  const win = content.ownerDocument.defaultView;
+  if (!win) return targets;
+  const bounds = content.getBoundingClientRect();
+  for (const selector of selectors) {
+    if (!selector.trim()) continue;
+    try {
+      for (const element of content.querySelectorAll(selector)) {
+        if (!(element instanceof win.HTMLElement) || !element.getClientRects().length) continue;
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0 && rect.bottom > bounds.top && rect.top < bounds.bottom && rect.right > bounds.left && rect.left < bounds.right) targets.add(element);
+      }
+    } catch { /* An invalid selector leaves the other selections usable. */ }
+  }
+  return new Set([...targets].filter(element => {
+    for (let parent = element.parentElement; parent && parent !== content; parent = parent.parentElement) {
+      if (targets.has(parent)) return false;
+    }
+    return true;
+  }));
+}
+
+export function pinForTransition(content: HTMLElement, targets: ReadonlySet<HTMLElement>) {
+  const bounds = content.getBoundingClientRect();
+  const elements = [...targets].map(element => ({ element, rect: element.getBoundingClientRect(), original: element.getAttribute(marker) }));
+  const fits = ({rect}: typeof elements[number]) => rect.top >= bounds.top - .5 && rect.left >= bounds.left - .5 && rect.bottom <= bounds.bottom + .5 && rect.right <= bounds.right + .5;
+  if (!elements.every(fits)) return null;
+  for (const {element} of elements) element.setAttribute(marker, '');
+  return {
+    stable(next: ReadonlySet<HTMLElement>) {
+      return next.size === elements.length && elements.every(({element, rect}) => {
+        if (!next.has(element)) return false;
+        const after = element.getBoundingClientRect();
+        return (['top', 'left', 'right', 'bottom'] as const).every(edge => Math.abs(rect[edge] - after[edge]) <= .5);
+      });
+    },
+    dispose() {
+      for (const {element, original} of elements) {
+        if (original === null) element.removeAttribute(marker);
+        else element.setAttribute(marker, original);
+      }
+    },
+  };
+}

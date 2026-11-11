@@ -8,7 +8,7 @@
 .stackflow-next :where(input,textarea,[contenteditable=true],[data-selectable]){user-select:text;-webkit-touch-callout:default}
 .stackflow-next-indicator{position:absolute;top:0;right:3px;width:3px;z-index:10;border-radius:3px;background:var(--stackflow-indicator,#8888);pointer-events:none;opacity:0;transition:opacity .15s}
 /* Only the body participates; fixed slots and the document stay live. */
-html[data-stackflow-animating]:not([data-stackflow-scoped]){view-transition-name:none}
+html[data-stackflow-animating]{view-transition-name:none}
 /* Keep browser-generated size/position interpolation off the horizontal slide. */
 ::view-transition-group(stackflow-next-content),::view-transition-image-pair(stackflow-next-content){animation-name:none}
 ::view-transition-group(stackflow-next-content){overflow:hidden}
@@ -31,12 +31,7 @@ html[data-stackflow-direction]::view-transition-image-pair(*),
 html[data-stackflow-direction]::view-transition-old(*),
 html[data-stackflow-direction]::view-transition-new(*){pointer-events:none}
 
-.stackflow-next-indicator-existing{position:fixed}
-[data-stackflow-scoped-target]{view-transition-name:root}
-[data-stackflow-scoped-target]::view-transition,[data-stackflow-scoped-target]::view-transition-group(root){overflow:clip}
-[data-stackflow-scoped-target]::view-transition-group(root),[data-stackflow-scoped-target]::view-transition-image-pair(root){animation-name:none}
-[data-stackflow-scoped-target]::view-transition-old(root),[data-stackflow-scoped-target]::view-transition-new(root){background-color:Canvas;background-image:linear-gradient(var(--stackflow-background,transparent),var(--stackflow-background,transparent));animation-duration:var(--stackflow-duration,280ms);animation-timing-function:cubic-bezier(.2,.7,.2,1);animation-fill-mode:both;mix-blend-mode:normal}
-html[data-stackflow-direction=push] [data-stackflow-scoped-target]::view-transition-old(root){animation-name:stackflow-retreat}
-html[data-stackflow-direction=push] [data-stackflow-scoped-target]::view-transition-new(root){animation-name:stackflow-enter}
-html[data-stackflow-direction=pop] [data-stackflow-scoped-target]::view-transition-old(root){animation-name:stackflow-leave;z-index:2}
-html[data-stackflow-direction=pop] [data-stackflow-scoped-target]::view-transition-new(root){animation-name:stackflow-return;z-index:1}
+[data-stackflow-fixed-target]{view-transition-name:match-element;view-transition-class:stackflow-fixed}
+::view-transition-group(.stackflow-fixed){animation:none;z-index:3}
+::view-transition-image-pair(.stackflow-fixed),::view-transition-new(.stackflow-fixed){animation:none;mix-blend-mode:normal}
+::view-transition-old(.stackflow-fixed){display:none}
