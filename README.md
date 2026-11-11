@@ -76,8 +76,9 @@ export function Actions() {
 - `useStackRouter` exposes push, replace, back, forward, prefetch and refresh.
 - Reloads and direct URL opens render immediately. In-app pushes and browser
   Back/Forward play the stack transition. Push and pop slide horizontally
-  in opposite directions. If the viewport's vertical bounds change during navigation,
-  Stackflow switches directly to the new page. By default, replace switches directly.
+  in opposite directions. If the viewport changes height before the browser
+  snapshot is ready, Stackflow can play the slide with the saved outgoing screen.
+  By default, replace switches directly.
 - Native scrolling remains active. Its hidden scrollbar is replaced by a visual,
   non-draggable indicator confined below the header and above the footer.
 - Control selection, callout and tap-highlight styling is scoped to controls;
@@ -303,12 +304,16 @@ export default function Loading() {
 In 1.0, the `loading` prop supplies default content for `StackLoading` and
 can be set to `null` for a marker with no visible content. The outgoing
 screen stays visible without a provider-wide loading overlay. The
-`navigationTimeout` option (default 4000 ms) releases a stalled snapshot.
+`navigationTimeout` option (default 4000 ms) releases a stalled browser snapshot.
+If the destination is still loading, Stackflow keeps the outgoing screen visible
+and plays the configured slide when the destination is ready.
 When a client-side redirect commits a different route, Stackflow records the
 actual destination and releases the snapshot. Competing history or View
 Transition libraries require application-specific testing.
 
-Browsers without View Transitions use ordinary navigation. Initial page loads,
+For same-document Back and Forward, Stackflow captures the outgoing screen
+on the Navigation API’s `navigate` event when available. Older browsers use
+the capture-phase `popstate` listener. Browsers without View Transitions use ordinary navigation. Initial page loads,
 reloads, and links activated before hydration follow browser navigation. Only same-origin
 HTTP(S) destinations are supported by the router helper. Ordinary Next Links
 still work but forward snapshot motion requires StackLink or useStackRouter.

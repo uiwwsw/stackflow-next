@@ -1,6 +1,6 @@
 {
   "name": "@uiwwsw/stackflow-next",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "type": "module",
   "description": "App-style page transitions and reusable component motion for Next.js App Router",
   "keywords": ["nextjs", "react", "stackflow", "view-transitions", "navigation", "animation"],
