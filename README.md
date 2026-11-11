@@ -13,8 +13,8 @@ Install the current prerelease from npm.
 npm install @uiwwsw/stackflow-next@next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.8`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.8)
+The `next` tag currently points to `0.2.0-alpha.9`. See the
+[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.9)
 and [live demo](https://stackflow-next.vercel.app/).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
@@ -75,7 +75,8 @@ export function Actions() {
 - `preserveScroll` restores the active scroll region's offset per history entry.
 - `StackLink` preserves Next prefetching, modified clicks and `onNavigate` cancellation.
 - `useStackRouter` exposes push, replace, back, forward, prefetch and refresh.
-- Browser back/forward updates the navigation state. Push and pop slide horizontally
+- Reloads and direct URL opens render immediately. In-app pushes and browser
+  Back/Forward play the stack transition. Push and pop slide horizontally
   in opposite directions. If the viewport's vertical bounds change during navigation,
   Stackflow switches directly to the new page. Replace switches directly as well.
 - Native scrolling remains active. Its hidden scrollbar is replaced by a visual,

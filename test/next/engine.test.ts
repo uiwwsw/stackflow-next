@@ -32,6 +32,82 @@ test('a route commit accepts equivalent URL and search parameter encodings', () 
   }
 });
 
+test('opening or reloading a page does not animate; in-app push, Back and Forward do', async () => {
+  const win = new Window({ url: 'http://localhost/detail' });
+  const directions: (string | undefined)[] = [];
+  (win.document as any).startViewTransition = (update: () => Promise<void>) => {
+    directions.push(win.document.documentElement.dataset.stackflowDirection);
+    return { ready: Promise.resolve(), finished: Promise.resolve().then(update), skipTransition() {} };
+  };
+  const makeEngine = () => new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
+  });
+  const first = makeEngine();
+  first.connect();
+  first.commit('/detail');
+  assert.deepEqual(directions, []);
+  const detail = win.history.state;
+  first.navigate('push', '/next', () => win.history.pushState({}, '', '/next'));
+  await Promise.resolve();
+  first.commit('/next');
+  const next = win.history.state;
+  first.dispose();
+  assert.deepEqual(directions, ['push']);
+
+  const reloaded = makeEngine();
+  try {
+    reloaded.connect();
+    reloaded.commit('/next');
+    assert.deepEqual(directions, ['push']);
+    const replace = Object.getPrototypeOf(win.history).replaceState;
+    for (const [path, state] of [['/detail', detail], ['/next', next]] as const) {
+      replace.call(win.history, state, '', path);
+      win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
+      reloaded.commit(path);
+    }
+    assert.deepEqual(directions, ['push', 'pop', 'push']);
+  } finally {
+    reloaded.dispose();
+  }
+});
+
+test('Next receives Back and Forward only after the outgoing snapshot is captured', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
+  });
+  const delivered: unknown[] = [];
+  win.addEventListener('popstate', event => { delivered.push(event.state); });
+  let capture: (() => Promise<void>) | undefined;
+  (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    capture = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  win.history.replaceState({ __NA: true }, '');
+  engine.connect();
+  try {
+    const first = win.history.state;
+    win.history.pushState({ __NA: true }, '', '/detail');
+    engine.commit('/detail');
+    const second = win.history.state;
+    const replace = Object.getPrototypeOf(win.history).replaceState;
+    for (const [path, state, direction] of [['/', first, 'pop'], ['/detail', second, 'push']] as const) {
+      const previousCount = delivered.length;
+      replace.call(win.history, state, '', path);
+      win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
+      assert.equal(delivered.length, previousCount);
+      assert.equal(win.document.documentElement.dataset.stackflowDirection, direction);
+      const pending = capture!();
+      assert.equal(delivered.length, previousCount + 1);
+      assert.deepEqual(delivered.at(-1), state);
+      engine.commit(path);
+      await pending;
+    }
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('navigation without swipe back does not clone the previous screen', () => {
   const { engine, window, el } = setup();
   try {
