@@ -3,14 +3,7 @@
   "version": "2.1.4",
   "type": "module",
   "description": "App-style page transitions and reusable component motion for Next.js App Router",
-  "keywords": [
-    "nextjs",
-    "react",
-    "stackflow",
-    "view-transitions",
-    "navigation",
-    "animation"
-  ],
+  "keywords": ["nextjs", "react", "stackflow", "view-transitions", "navigation", "animation"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
