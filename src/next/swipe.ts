@@ -96,6 +96,7 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
     if(gesture!==saved)return;
     if(!commit){reset();return;}
     content.style.transform=`translateX(${width}px)`;
+    saved.background.style.transform='translateX(0)';
     unsubscribe=engine.subscribe(reset);
     timer=setTimeout(reset,engine.options.timeout);
     engine.skipNextPopAnimation=true;

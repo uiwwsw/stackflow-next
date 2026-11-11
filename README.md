@@ -13,8 +13,8 @@ Install the current prerelease from npm.
 npm install @uiwwsw/stackflow-next@next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.5`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.5)
+The `next` tag currently points to `0.2.0-alpha.6`. See the
+[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.6)
 and [live demo](https://stackflow-next.vercel.app/).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
@@ -50,8 +50,8 @@ export default function Layout({ children }) {
 
 The provider needs a bounded height. Set `--stackflow-background` to an opaque
 color on the provider or an ancestor to match your theme. The live viewport,
-swipe preview and transition snapshots share this background. The default is
-the browser’s `Canvas` color, so transparent pages remain readable during motion.
+swipe preview and transition snapshots share this background. The browser's
+`Canvas` color backs the surface even if the theme color is transparent.
 The optional `header` and `footer` slots remain outside the scroll viewport. Keep global overlays outside the transition
 surface. Mount one provider per document.
 
@@ -75,7 +75,9 @@ export function Actions() {
 - `preserveScroll` restores the active scroll region's offset per history entry.
 - `StackLink` preserves Next prefetching, modified clicks and `onNavigate` cancellation.
 - `useStackRouter` exposes push, replace, back, forward, prefetch and refresh.
-- Browser back/forward updates the navigation state. Push and pop have opposite motion.
+- Browser back/forward updates the navigation state. Push and pop slide horizontally
+  in opposite directions. If the viewport's vertical bounds change during navigation,
+  Stackflow switches directly to the new page. Replace switches directly as well.
 - Native scrolling remains active. Its hidden scrollbar is replaced by a visual,
   non-draggable indicator confined below the header and above the footer.
 - Control selection, callout and tap-highlight styling is scoped to controls;

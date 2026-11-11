@@ -67,6 +67,31 @@ test('snapshot styles are active before capture and clear if starting a transiti
   }
 });
 
+test('a change in the vertical viewport bounds skips the snapshot, not navigation', async () => {
+  const { engine, window, el } = setup();
+  let top = 48;
+  let skipped = 0;
+  el.getBoundingClientRect = () => new window.DOMRect(0, top, 400, 500 - top);
+  let update: (() => Promise<void>) | undefined;
+  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() { skipped++; } };
+  };
+  engine.options.animation = 'ios';
+  try {
+    engine.navigate('push', '/detail', () => window.history.pushState({}, '', '/detail'));
+    const pending = update!();
+    assert.equal(skipped, 0);
+    top = 72;
+    engine.commit('/detail');
+    await pending;
+    assert.equal(skipped, 1);
+    assert.equal(window.location.pathname, '/detail');
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('back restores the selected region and keeps its position in the swipe preview', () => {
   const win = new Window({ url: 'http://localhost/' });
   const body = win.document.createElement('div');
