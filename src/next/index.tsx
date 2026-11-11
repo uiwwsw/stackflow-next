@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { NavigationEngine, safeHref } from './engine.js';
 import { attachSwipeBack } from './swipe.js';
 import { attachScrollViewport } from './scroll.js';
-import { attachExistingIndicator, findExistingScroller, findExistingTarget } from './existing-layout.js';
 
 const Context = createContext<NavigationEngine | null | undefined>(undefined);
 function useEngine() { const engine=useContext(Context); if(engine===undefined) throw new Error('Wrap your layout in StackflowProvider'); return engine; }
@@ -27,7 +26,9 @@ export interface StackflowProviderProps {
   preserveScroll?: boolean;
   /** CSS selector for a single visible scroll region inside the provider body. */
   scrollTarget?: string;
-  /** Existing shared DOM element to animate without rendering a layout wrapper. */
+  /** CSS selectors for shared elements inside the page that should not slide. */
+  fixedTargets?: string | readonly string[];
+  /** @deprecated Remove this prop. The full page is always the transition surface. */
   transitionTarget?: string;
   swipeBack?: boolean;
   maxEntries?: number;
@@ -35,47 +36,45 @@ export interface StackflowProviderProps {
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
-  const existingLayout = transitionTarget !== undefined;
-  const selectors = useRef({ transitionTarget, scrollTarget });
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
+  const fixed = useRef<readonly string[]>([]);
   const indicator=useRef<HTMLDivElement>(null);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
   const engineRef=useRef<NavigationEngine | null>(null);
   const [engine,setEngine]=useState<NavigationEngine|null>(null);
   const router=useRouter();
-  useLayoutEffect(()=>{
-    selectors.current = { transitionTarget, scrollTarget };
-  },[transitionTarget,scrollTarget]);
-  useLayoutEffect(()=>{
-    if (existingLayout) {
-      if (scrollTarget === undefined) return;
-      return attachExistingIndicator(document, scrollTarget, element => engineRef.current?.capture(element));
+  useLayoutEffect(() => {
+    fixed.current = typeof fixedTargets === 'string' ? [fixedTargets] : fixedTargets ?? [];
+  }, [fixedTargets]);
+  useLayoutEffect(() => {
+    if (process.env.NODE_ENV !== 'production' && transitionTarget !== undefined) {
+      console.warn('[StackflowProvider] Remove transitionTarget to use the full-page transition. Use fixedTargets to keep selected elements still.');
     }
+  }, [transitionTarget]);
+  useLayoutEffect(()=>{
     if (!viewport.current || !indicator.current) return;
     const controller = attachScrollViewport(viewport.current, indicator.current, scrollTarget,
       element => engineRef.current?.capture(element), element => engineRef.current?.restoreScroll(element));
     scroll.current = controller;
     return () => { controller.dispose(); scroll.current = null; };
-  },[existingLayout,scrollTarget]);
+  },[scrollTarget]);
   useLayoutEffect(()=>{
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
-    const value=new NavigationEngine(window,
-      () => existingLayout ? findExistingTarget(document, selectors.current.transitionTarget) : viewport.current,
-      {animation,preserveScroll,timeout:navigationTimeout,maxEntries,existingLayout},
-      () => existingLayout ? findExistingScroller(document, selectors.current.scrollTarget) : scroll.current?.getElement(true) ?? viewport.current);
+    const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries},
+      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current);
     const disconnect=value.connect(); engineRef.current=value; setEngine(value);
     return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
-  },[animation,preserveScroll,maxEntries,navigationTimeout,existingLayout]);
+  },[animation,preserveScroll,maxEntries,navigationTimeout]);
   useLayoutEffect(()=>{
     if(!engine)return;
-    engine.setSwipeBackEnabled(swipeBack && !existingLayout);
-    if(existingLayout||!swipeBack||!viewport.current)return;
+    engine.setSwipeBackEnabled(swipeBack);
+    if(!swipeBack||!viewport.current)return;
     return attachSwipeBack(engine,viewport.current,()=>router.back());
-  },[swipeBack,engine,router,existingLayout]);
+  },[swipeBack,engine,router]);
   return <Context.Provider value={engine}>
-    {existingLayout ? children : <div className={`stackflow-next ${className}`} style={style}>
+    <div className={`stackflow-next ${className}`} style={style}>
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
         <div ref={viewport} className="stackflow-next-content">{children}</div>
@@ -83,15 +82,15 @@ export function StackflowProvider({children,header,footer,persistent,animation='
       </div>
       {persistent != null && typeof persistent !== 'boolean' && <div className="stackflow-next-persistent">{persistent}</div>}
       {footer && <div className="stackflow-next-footer">{footer}</div>}
-    </div>}
+    </div>
     <Suspense fallback={null}><RouteObserver engine={engine}/></Suspense>
   </Context.Provider>;
 }
 export function useStackRouter() {
   const engine=useEngine(),router=useRouter();
   return useMemo(()=>({
-    push(href:string){href=safeHref(href,window.location.href);if(engine)engine.navigate('push',href,()=>router.push(href,engine.scrollOptions()));else router.push(href);},
-    replace(href:string){href=safeHref(href,window.location.href);if(engine)engine.navigate('replace',href,()=>router.replace(href,engine.scrollOptions()));else router.replace(href);},
+    push(href:string){href=safeHref(href,window.location.href);if(engine)engine.navigate('push',href,()=>router.push(href,{scroll:false}));else router.push(href,{scroll:false});},
+    replace(href:string){href=safeHref(href,window.location.href);if(engine)engine.navigate('replace',href,()=>router.replace(href,{scroll:false}));else router.replace(href,{scroll:false});},
     back(){if(engine)engine.navigate('pop',null,()=>router.back());else router.back();},
     forward(){if(engine)engine.navigate('push',null,()=>router.forward());else router.forward();},
     prefetch:router.prefetch, refresh:router.refresh,
