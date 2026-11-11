@@ -7,6 +7,8 @@
 .stackflow-next :where(a,button,[role=button], [data-app-control]){-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;user-select:none}
 .stackflow-next :where(input,textarea,[contenteditable=true],[data-selectable]){user-select:text;-webkit-touch-callout:default}
 .stackflow-next-indicator{position:absolute;top:0;right:3px;width:3px;z-index:10;border-radius:3px;background:var(--stackflow-indicator,#8888);pointer-events:none;opacity:0;transition:opacity .15s}
+.stackflow-next-navigation-loading{position:absolute;inset:auto 0 12px;display:flex;justify-content:center;z-index:11;pointer-events:none}
+.stackflow-next-navigation-loading>span{padding:6px 12px;border-radius:20px;background:Canvas;color:CanvasText;border:1px solid currentColor}
 /* Only the body participates; fixed slots and the document stay live. */
 html[data-stackflow-animating]{view-transition-name:none}
 /* Keep browser-generated size/position interpolation off the horizontal slide. */
