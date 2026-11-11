@@ -14,7 +14,7 @@ import '@uiwwsw/stackflow-next/style.css';
 <StackflowProvider
   fixedTargets="[data-demo-fixed]"
   scrollTarget="[data-demo-scroll]"
-  skeletonRoutes={['/skeleton']}
+  skeletonRoutes={[{ pattern: '^/skeleton$' }]}
 >
   {children}
 </StackflowProvider>
@@ -36,7 +36,9 @@ export default function Layout({children}: {children: ReactNode}) {
         <code className="install">npm install @uiwwsw/stackflow-next</code>
         <a className="download-link" href="https://www.npmjs.com/package/@uiwwsw/stackflow-next">npm 패키지 보기</a>
       </section>
-      <section className="demo-area" aria-label="라이브 내비게이션 데모"><DemoFrame>{children}</DemoFrame></section>
+      <section className="demo-area" aria-label="라이브 내비게이션 데모">
+        <DemoFrame skeletonRoutes={[{ pattern: '^/skeleton$' }]}>{children}</DemoFrame>
+      </section>
     </main>
     <section className="api-section">
       <div><h2>설정 예시</h2><pre><code>{example}</code></pre></div>

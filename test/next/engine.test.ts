@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Window} from 'happy-dom';
 import {NavigationEngine,HISTORY_KEY,safeHref} from '../../src/next/engine.ts';
+import {createSkeletonRouteMatcher} from '../../src/next/skeleton-routes.ts';
 function setup(maxEntries=3){const window=new Window({url:'http://localhost/'});const el=window.document.createElement('main');const engine=new NavigationEngine(window as unknown as globalThis.Window,()=>el as unknown as HTMLElement,{animation:'none',preserveScroll:true,timeout:30,maxEntries});engine.connect();return {engine,window,el};}
 test('rejects executable and ambiguous cross-origin destinations',()=>{
   for(const href of ['javascript:alert(1)','https://example.invalid','//example.invalid','http://localhost//example.invalid']) {
@@ -79,7 +80,7 @@ test('two quick Back events capture the rendered route when the intermediate ent
   const win = new Window({ url: 'http://localhost/' });
   const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
-  }, () => null, () => [], () => [], () => [], () => [{ href: '/instant', animation: 'none' }]);
+  }, () => null, () => [], () => [], () => false, () => [{ href: '/instant', animation: 'none' }]);
   const callbacks: Array<() => Promise<void>> = [];
   const delivered: string[] = [];
   win.addEventListener('popstate', () => delivered.push(win.location.pathname));
@@ -189,7 +190,7 @@ test('query changes under a base path use ordinary history and ignore legacy que
   const win = new Window({ url: 'http://localhost/app/detail?city=seoul' });
   const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 8,
-  }, () => null, () => [], () => [], () => [], () => [
+  }, () => null, () => [], () => [], () => false, () => [
     { href: '/detail?panel=map', animation: 'modal' },
     { href: '/detail?panel=quiet', animation: 'none' },
     { href: '/editor', animation: 'ios' },
@@ -435,16 +436,20 @@ test('the slide waits for a visible loading boundary after the destination commi
   }
 });
 
-test('only a pathname skeleton rule releases the transition while its loading boundary is visible', async () => {
-  const win = new Window({ url: 'http://localhost/' });
+test('literal and regex skeleton rules match the app pathname before releasing a loading boundary', async () => {
+  const win = new Window({ url: 'http://localhost/shop' });
   const viewport = win.document.createElement('main');
   const loading = win.document.createElement('div');
   loading.setAttribute('data-stackflow-loading', '');
   Object.defineProperty(loading, 'getClientRects', { value: () => ({ length: 1 }) });
   const getViewport = () => viewport as unknown as HTMLElement;
+  const products = /^\/products\/\d+$/gy;
+  products.lastIndex = 5;
   const engine = new NavigationEngine(win as unknown as globalThis.Window, getViewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3, waitForPage: true,
-  }, getViewport, () => [], () => [], () => ['/skeleton', '/legacy-skeleton?q=one']);
+  }, getViewport, () => [], () => [], createSkeletonRouteMatcher([
+    '/skeleton', '/legacy-skeleton?q=one', products, { pattern: '^/ORDERS/\\d+$', flags: 'i' },
+  ]));
   let update: (() => Promise<void>) | undefined;
   (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
     update = callback;
@@ -452,29 +457,29 @@ test('only a pathname skeleton rule releases the transition while its loading bo
   };
   engine.connect();
   try {
-    const destination = '/skeleton?city=seoul&q=one';
-    engine.navigate('push', destination, () => {
-      win.history.pushState({}, '', destination);
-      viewport.append(loading);
-    });
-    const pending = update!();
-    engine.commit(destination);
-    assert.equal(engine.isPending(), false);
-    assert.equal(viewport.contains(loading), true);
-    await pending;
-
-    loading.remove();
-    const legacy = '/legacy-skeleton?q=one';
-    engine.navigate('push', legacy, () => {
-      win.history.pushState({}, '', legacy);
-      viewport.append(loading);
-    });
-    const waiting = update!();
-    engine.commit(legacy);
-    assert.equal(engine.isPending(), true);
-    loading.remove();
-    await waiting;
-    assert.equal(engine.isPending(), false);
+    engine.commit('/');
+    const destinations = [
+      ['/skeleton?city=seoul&q=one', true],
+      ['/products/123/?sort=name#reviews', true],
+      ['/products/456?sort=price', true],
+      ['/orders/5', true],
+      ['/products/new?redirect=/products/2', false],
+      ['/legacy-skeleton?q=one', false],
+    ] as const;
+    for (const [destination, showsSkeleton] of destinations) {
+      engine.navigate('push', destination, () => {
+        win.history.pushState({}, '', `/shop${destination}`);
+        viewport.append(loading);
+      });
+      const pending = update!();
+      engine.commit(destination);
+      assert.equal(engine.isPending(), !showsSkeleton, destination);
+      assert.equal(viewport.contains(loading), true);
+      loading.remove();
+      await pending;
+      assert.equal(engine.isPending(), false);
+    }
+    assert.equal(products.lastIndex, 5);
   } finally {
     engine.dispose();
   }

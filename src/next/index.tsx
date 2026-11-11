@@ -6,8 +6,10 @@ import { NavigationEngine, safeHref, type RouteTransition } from './engine.js';
 import { attachSwipeBack } from './swipe.js';
 import { attachScrollViewport } from './scroll.js';
 import type { FixedTarget } from './fixed-targets.js';
+import { createSkeletonRouteMatcher, type SkeletonRoute } from './skeleton-routes.js';
 export type { FixedTarget } from './fixed-targets.js';
 export type { RouteTransition } from './engine.js';
+export type { SkeletonRoute } from './skeleton-routes.js';
 export { StackMotion, type StackMotionPreset, type StackMotionProps } from './motion.js';
 
 const Context = createContext<NavigationEngine | null | undefined>(undefined);
@@ -53,8 +55,8 @@ export interface StackflowProviderProps {
   navigationTimeout?: number;
   /** Wait for visible StackLoading boundaries to finish before animating. Defaults to true. */
   waitForPage?: boolean;
-  /** Pathnames that can slide in with their loading fallback visible. */
-  skeletonRoutes?: readonly string[];
+  /** Exact pathnames or regular expressions that can slide in with their loading fallback visible. */
+  skeletonRoutes?: readonly SkeletonRoute[];
   /** Default content for StackLoading. Pass null for an invisible readiness marker. */
   loading?: ReactNode;
   className?: string;
@@ -65,7 +67,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
   const fixed = useRef<readonly FixedTarget[]>([]);
   const modals = useRef<readonly string[]>([]);
   const transitions = useRef<readonly RouteTransition[]>([]);
-  const skeletons = useRef<readonly string[]>([]);
+  const matchesSkeletonRoute = useRef<(href: string) => boolean>(() => false);
   const indicator=useRef<HTMLDivElement>(null);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
   const engineRef=useRef<NavigationEngine | null>(null);
@@ -73,7 +75,9 @@ export function StackflowProvider({children,header,footer,persistent,animation='
   const router=useRouter();
   useLayoutEffect(() => { modals.current = modalRoutes ?? []; }, [modalRoutes]);
   useLayoutEffect(() => { transitions.current = transitionRoutes ?? []; }, [transitionRoutes]);
-  useLayoutEffect(() => { skeletons.current = skeletonRoutes ?? []; }, [skeletonRoutes]);
+  useLayoutEffect(() => {
+    matchesSkeletonRoute.current = createSkeletonRouteMatcher(skeletonRoutes ?? []);
+  }, [skeletonRoutes]);
   useLayoutEffect(() => {
     if (fixedTargets == null) fixed.current = [];
     else if (typeof fixedTargets === 'string' || 'selector' in fixedTargets) fixed.current = [fixedTargets];
@@ -95,7 +99,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
     const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries,waitForPage},
-      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, () => skeletons.current, () => transitions.current);
+      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, href => matchesSkeletonRoute.current(href), () => transitions.current);
     const disconnect=value.connect(); engineRef.current=value; setEngine(value);
     return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
   },[animation,preserveScroll,maxEntries,navigationTimeout,waitForPage]);

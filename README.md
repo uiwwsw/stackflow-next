@@ -276,10 +276,18 @@ that fallback available earlier. The same rule applies when arriving via
 a link, browser Back, or browser Forward.
 
 ```tsx
-<StackflowProvider skeletonRoutes={['/checkout']}>
+<StackflowProvider
+  skeletonRoutes={['/checkout', { pattern: '^/products/[^/]+$' }]}
+>
   {children}
 </StackflowProvider>
 ```
+
+Exact paths can be mixed with regular expressions. Patterns test the app
+pathname without the Next.js `basePath`, search parameters, or hash. Use
+`{ pattern, flags? }` in a Server Component such as `app/layout.tsx`.
+Client Components can also use a `RegExp` literal, such as
+`/^\/products\/[^/]+$/`.
 
 ```tsx
 // app/checkout/loading.tsx

@@ -1,5 +1,5 @@
 'use client';
-import {StackflowProvider,StackLink,StackMotion,useStackRouter,useStackState,useStack} from '@uiwwsw/stackflow-next';
+import {StackflowProvider,StackLink,StackMotion,useStackRouter,useStackState,useStack,type SkeletonRoute} from '@uiwwsw/stackflow-next';
 import {useEffect,useId,useRef,useState,useSyncExternalStore,type ReactNode} from 'react';
 import {usePathname} from 'next/navigation';
 export function DraftForm(){const [draft,setDraft]=useStackState('travel-memo','');return <label className="draft-label">여행 메모<input aria-label="여행 메모" value={draft} placeholder="돌아와도 메모가 유지돼요" onChange={e=>setDraft(e.target.value)}/></label>;}
@@ -17,7 +17,6 @@ export function DemoHeader() {
 }
 export function DemoFooter(){const router=useStackRouter();const stack=useStack();return <div className="demo-footer"><button onClick={()=>router.back()}>Back</button><span data-testid="stack-depth">스택 {stack?.activities.length??0}</span><button className="primary" onClick={()=>router.forward()}>Forward</button></div>;}
 const modalRoutes = ['/slow', '/skeleton'];
-const skeletonRoutes = ['/skeleton'];
 const subscribeToHydration = () => () => {};
 const hydrated = () => true;
 const notHydrated = () => false;
@@ -42,7 +41,7 @@ function MotionStatus() {
     : null;
 }
 
-export function DemoFrame({children}: {children: ReactNode}) {
+export function DemoFrame({children, skeletonRoutes}: {children: ReactNode; skeletonRoutes: readonly SkeletonRoute[]}) {
   const ready = useSyncExternalStore(subscribeToHydration, hydrated, notHydrated);
   return <>
     <div className="demo-frame" inert={!ready} data-demo-ready={ready ? '' : undefined}>
