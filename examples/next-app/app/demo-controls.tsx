@@ -6,16 +6,31 @@ export function DraftForm(){const [draft,setDraft]=useStackState('travel-memo','
 export function DemoHeader() {
   const path = usePathname();
   return <div className="demo-header">
-    <strong>Explore</strong>
+    <StackLink className="demo-brand" href="/">Stackflow Next</StackLink>
     <nav aria-label="데모 페이지">
       <StackLink href="/" aria-current={path === '/' ? 'page' : undefined}>목록</StackLink>
       <StackLink href="/detail?city=seoul" aria-current={path === '/detail' ? 'page' : undefined}>상세</StackLink>
-      <StackLink href="/slow" prefetch={false} aria-current={path === '/slow' ? 'page' : undefined}>대기</StackLink>
+      <StackLink href="/slow" prefetch={false} aria-current={path === '/slow' ? 'page' : undefined}>5.5초 대기</StackLink>
       <StackLink href="/skeleton" aria-current={path === '/skeleton' ? 'page' : undefined}>스켈레톤</StackLink>
     </nav>
   </div>;
 }
-export function DemoFooter(){const router=useStackRouter();const stack=useStack();return <div className="demo-footer"><button onClick={()=>router.back()}>Back</button><span data-testid="stack-depth">스택 {stack?.activities.length??0}</span><button className="primary" onClick={()=>router.forward()}>Forward</button></div>;}
+export function DemoFooter() {
+  const router = useStackRouter();
+  const stack = useStack();
+  return <div className="demo-footer">
+    <div className="demo-history">
+      <button onClick={() => router.back()}>앱 뒤로</button>
+      <button onClick={() => router.forward()}>앱 앞으로</button>
+    </div>
+    <div className="demo-status">
+      <span>브라우저의 뒤로·앞으로 버튼으로도 확인하세요.</span>
+      <MotionStatus />
+      <span data-testid="stack-depth">스택 {stack?.activities.length ?? 0}</span>
+    </div>
+    <a href="https://github.com/uiwwsw/stackflow-next">GitHub</a>
+  </div>;
+}
 const modalRoutes = ['/slow', '/skeleton'];
 const subscribeToHydration = () => () => {};
 const hydrated = () => true;
@@ -37,15 +52,14 @@ function MotionStatus() {
     document.addEventListener('animationstart', onAnimationStart);
     return () => document.removeEventListener('animationstart', onAnimationStart);
   }, []);
-  return motion.count > 0
-    ? <output className="demo-motion" data-testid="last-motion" data-count={motion.count}>최근 전환 · {motion.label}</output>
-    : null;
+  return <output className="demo-motion" data-testid="last-motion" data-count={motion.count}>
+    {motion.count ? `최근 전환 · ${motion.label} (${motion.count}회)` : '최근 전환 없음'}
+  </output>;
 }
 
 export function DemoFrame({children, skeletonRoutes}: {children: ReactNode; skeletonRoutes: readonly SkeletonRoute[]}) {
   const ready = useSyncExternalStore(subscribeToHydration, hydrated, notHydrated);
-  return <>
-    <div className="demo-frame" inert={!ready} data-demo-ready={ready ? '' : undefined}>
+  return <div className="demo-frame" inert={!ready} data-demo-ready={ready ? '' : undefined}>
       <StackflowProvider swipeBack modalRoutes={modalRoutes} skeletonRoutes={skeletonRoutes}
         header={<DemoHeader />} footer={<DemoFooter />} fixedTargets="[data-demo-fixed]" scrollTarget="[data-demo-scroll]">
         <div className="demo-page-shell">
@@ -53,10 +67,7 @@ export function DemoFrame({children, skeletonRoutes}: {children: ReactNode; skel
           <div data-demo-fixed><SharedTimer /></div>
         </div>
       </StackflowProvider>
-    </div>
-    <p className="demo-caption">상세의 지도 패널은 위로 열리고 오른쪽으로 닫힙니다. ‘대기’와 ‘스켈레톤’에서는 페이지 전환 시점을 비교할 수 있습니다.</p>
-    <MotionStatus />
-  </>;
+  </div>;
 }
 export function ReplaceHome(){const router=useStackRouter();return <button className="secondary" onClick={()=>router.replace('/')}>목록으로 교체 · replace</button>;}
 
