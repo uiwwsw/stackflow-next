@@ -12,7 +12,6 @@ const Context = createContext<NavigationEngine | null | undefined>(undefined);
 function useEngine() { const engine=useContext(Context); if(engine===undefined) throw new Error('Wrap your layout in StackflowProvider'); return engine; }
 const noopSubscribe = () => () => {};
 const emptyStack = () => null;
-const idle = () => false;
 const defaultLoading = <span>Loading…</span>;
 const LoadingContext = createContext<ReactNode>(defaultLoading);
 
@@ -22,10 +21,6 @@ export function StackLoading({children}: {children?: ReactNode}) {
   return <div data-stackflow-loading="" role="status">{children === undefined ? loading : children}</div>;
 }
 
-function NavigationLoading({engine, children}: {engine: NavigationEngine | null; children: ReactNode}) {
-  const pending = useSyncExternalStore(engine?.subscribe ?? noopSubscribe, engine?.isPending ?? idle, idle);
-  return pending && children != null ? <div className="stackflow-next-navigation-loading" role="status">{children}</div> : null;
-}
 function RouteObserver({engine}: {engine: NavigationEngine | null}) {
   const path=usePathname(), search=useSearchParams();
   const route=path + (search.toString() ? `?${search}` : '');
@@ -53,21 +48,25 @@ export interface StackflowProviderProps {
   navigationTimeout?: number;
   /** Wait for visible StackLoading boundaries to finish before animating. Defaults to true. */
   waitForPage?: boolean;
-  /** Content shown while navigation is pending and by StackLoading. Pass null to hide it. */
+  /** Exact destination pathnames that can slide in with their loading fallback visible. */
+  skeletonRoutes?: readonly string[];
+  /** Default content for StackLoading. Pass null for an invisible readiness marker. */
   loading?: ReactNode;
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,loading=defaultLoading,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,skeletonRoutes,loading=defaultLoading,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
   const modals = useRef<readonly string[]>([]);
+  const skeletons = useRef<readonly string[]>([]);
   const indicator=useRef<HTMLDivElement>(null);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
   const engineRef=useRef<NavigationEngine | null>(null);
   const [engine,setEngine]=useState<NavigationEngine|null>(null);
   const router=useRouter();
   useLayoutEffect(() => { modals.current = modalRoutes ?? []; }, [modalRoutes]);
+  useLayoutEffect(() => { skeletons.current = skeletonRoutes ?? []; }, [skeletonRoutes]);
   useLayoutEffect(() => {
     if (fixedTargets == null) fixed.current = [];
     else if (typeof fixedTargets === 'string' || 'selector' in fixedTargets) fixed.current = [fixedTargets];
@@ -89,7 +88,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
     const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries,waitForPage},
-      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current);
+      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, () => skeletons.current);
     const disconnect=value.connect(); engineRef.current=value; setEngine(value);
     return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
   },[animation,preserveScroll,maxEntries,navigationTimeout,waitForPage]);
@@ -105,7 +104,6 @@ export function StackflowProvider({children,header,footer,persistent,animation='
       <div className="stackflow-next-viewport">
         <div ref={viewport} className="stackflow-next-content">{children}</div>
         <div ref={indicator} className="stackflow-next-indicator" aria-hidden="true"/>
-        <NavigationLoading engine={engine}>{loading}</NavigationLoading>
       </div>
       {persistent != null && typeof persistent !== 'boolean' && <div className="stackflow-next-persistent">{persistent}</div>}
       {footer && <div className="stackflow-next-footer">{footer}</div>}

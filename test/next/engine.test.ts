@@ -96,6 +96,7 @@ test('Next receives Back and Forward only after the outgoing snapshot is capture
       replace.call(win.history, state, '', path);
       win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
       assert.equal(delivered.length, previousCount);
+      assert.equal(engine.isPending(), true);
       assert.equal(win.document.documentElement.dataset.stackflowDirection, direction);
       const pending = capture!();
       assert.equal(delivered.length, previousCount + 1);
@@ -103,6 +104,53 @@ test('Next receives Back and Forward only after the outgoing snapshot is capture
       engine.commit(path);
       await pending;
     }
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('first Back replays Next state after capture even when the entry lacks Stackflow metadata', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const navigation = { currentEntry: { index: 0 } };
+  Object.defineProperty(win, 'navigation', { value: navigation });
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
+  });
+  const initial = { __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: { tree: ['initial'] } };
+  const delivered: unknown[] = [];
+  win.addEventListener('popstate', event => delivered.push(event.state));
+  engine.connect();
+  try {
+    engine.write('draft', 'saved before the first push');
+    navigation.currentEntry.index = 1;
+    win.history.pushState({ __NA: true }, '', '/detail');
+    engine.commit('/detail');
+    const detail = win.history.state;
+    let update: (() => Promise<void>) | undefined;
+    (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+      update = callback;
+      return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+    };
+    const replace = Object.getPrototypeOf(win.history).replaceState;
+    navigation.currentEntry.index = 0;
+    replace.call(win.history, initial, '', '/');
+    win.dispatchEvent(new win.PopStateEvent('popstate', { state: initial }));
+    assert.equal(engine.direction, 'pop');
+    assert.equal(delivered.length, 0);
+    const back = update!();
+    engine.commit('/');
+    await back;
+    assert.deepEqual(delivered, [initial]);
+    assert.equal(engine.read('draft', ''), 'saved before the first push');
+
+    navigation.currentEntry.index = 1;
+    replace.call(win.history, detail, '', '/detail');
+    win.dispatchEvent(new win.PopStateEvent('popstate', { state: detail }));
+    assert.equal(engine.direction, 'push');
+    const forward = update!();
+    engine.commit('/detail');
+    await forward;
+    assert.deepEqual(delivered, [initial, detail]);
   } finally {
     engine.dispose();
   }
@@ -129,14 +177,43 @@ test('the slide waits for a visible loading boundary after the destination commi
       content.append(loading);
     });
     assert.equal(engine.isPending(), true);
-    assert.equal(update, undefined);
-    await new Promise<void>(resolve => win.requestAnimationFrame(() => win.requestAnimationFrame(() => resolve())));
     const pending = update!();
     engine.commit('/slow');
     assert.equal(engine.isPending(), true);
     loading.remove();
     await pending;
     assert.equal(engine.isPending(), false);
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('a skeleton route slides on its first commit with the loading boundary still visible', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const viewport = win.document.createElement('main');
+  const loading = win.document.createElement('div');
+  loading.setAttribute('data-stackflow-loading', '');
+  Object.defineProperty(loading, 'getClientRects', { value: () => ({ length: 1 }) });
+  const getViewport = () => viewport as unknown as HTMLElement;
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, getViewport, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3, waitForPage: true,
+  }, getViewport, () => [], () => [], () => ['/skeleton']);
+  let update: (() => Promise<void>) | undefined;
+  (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  engine.connect();
+  try {
+    engine.navigate('push', '/skeleton?q=one', () => {
+      win.history.pushState({}, '', '/skeleton?q=one');
+      viewport.append(loading);
+    });
+    const pending = update!();
+    engine.commit('/skeleton?q=one');
+    assert.equal(engine.isPending(), false);
+    assert.equal(viewport.contains(loading), true);
+    await pending;
   } finally {
     engine.dispose();
   }

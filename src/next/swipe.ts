@@ -9,7 +9,7 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
     y: number;
     time: number;
     dx: number;
-    previous: HTMLElement;
+    previous: HTMLElement | undefined;
     background: HTMLElement | null;
     fixed: boolean;
     active: boolean;
@@ -26,7 +26,9 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
     const bounds=content.getBoundingClientRect();
     if(event.clientX<bounds.left||event.clientX-bounds.left>24)return;
     if((event.target as Element).closest('input,textarea,select,[contenteditable],[data-stackflow-no-swipe]'))return;
-    const previous=engine.previousVisual();if(!previous)return;
+    const fixed = engine.hasFixedTargets() || engine.hasModalBackTransition();
+    const previous = fixed ? undefined : engine.previousVisual();
+    if (fixed ? !engine.hasPreviousEntry() : !previous) return;
     gesture = {
       id: event.pointerId,
       x: event.clientX,
@@ -35,7 +37,7 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
       dx: 0,
       previous,
       background: null,
-      fixed: engine.hasFixedTargets() || engine.hasModalBackTransition(),
+      fixed,
       active: false,
     };
   };
@@ -72,13 +74,13 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
       }
       if (dx < 8) return;
       const parent = content.parentElement;
-      if (!parent || engine.previousVisual() !== saved.previous) {
+      if (!parent || (saved.fixed ? !engine.hasPreviousEntry() : engine.previousVisual() !== saved.previous)) {
         reset();
         return;
       }
       content.setPointerCapture?.(event.pointerId);
       saved.active = true;
-      if (!saved.fixed) saved.background = mountPreview(saved.previous, parent);
+      if (saved.previous) saved.background = mountPreview(saved.previous, parent);
     }
     saved.dx = Math.min(content.clientWidth, dx);
     if (event.cancelable) event.preventDefault();

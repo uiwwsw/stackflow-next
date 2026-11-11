@@ -1,6 +1,6 @@
 {
   "name": "@uiwwsw/stackflow-next",
-  "version": "0.2.0-alpha.12",
+  "version": "1.0.0",
   "type": "module",
   "description": "Stackflow navigation state and snapshot transitions for Next.js App Router",
   "exports": {
@@ -62,8 +62,7 @@
     "react-dom": "^19.3.1"
   },
   "publishConfig": {
-    "access": "public",
-    "tag": "next"
+    "access": "public"
   },
   "author": "uiwwsw",
   "homepage": "https://stackflow-next.vercel.app",

@@ -6,6 +6,7 @@ export type Entry = { id: string; position: number; url: string; scroll: number;
 export type Direction = 'push' | 'pop' | 'replace';
 type Transition = { finished: Promise<void>; ready: Promise<void>; skipTransition(): void };
 type TransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => Transition };
+type NavigationWindow = Window & { navigation?: { currentEntry?: { index: number } | null } };
 export function safeHref(href: string, base: string) {
   const url = new URL(href, base), origin = new URL(base).origin;
   if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol)) throw new TypeError('Only same-origin HTTP(S) navigation is supported');
@@ -28,7 +29,8 @@ export class NavigationEngine {
   private generation = 0;
   private finish: (() => void) | null = null;
   private loadingObserver: MutationObserver | null = null;
-  private cancelLoadingPaint: (() => void) | undefined;
+  private waitForDestination = false;
+  private historyIndex: number | undefined;
   private expected: string | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private transition: Transition | null = null;
@@ -47,7 +49,11 @@ export class NavigationEngine {
     this.swipeBackEnabled = enabled;
     if (!enabled) for (const entry of this.entries.values()) delete entry.visual;
   }
-  private previousEntry() { return [...this.entries.values()].find(entry => entry.position === (this.current?.position ?? 0) - 1); }
+  private previousEntry() {
+    const position = (this.current?.position ?? 0) - 1;
+    for (const entry of this.entries.values()) if (entry.position === position) return entry;
+  }
+  hasPreviousEntry() { return this.previousEntry() !== undefined; }
   previousVisual() { return this.previousEntry()?.visual; }
   private modalMotion(from: string, to: string) {
     const source = routePathname(from);
@@ -63,7 +69,7 @@ export class NavigationEngine {
     return previous !== undefined && this.modalMotion(this.current?.url ?? this.url(), previous.url) !== undefined;
   }
   private saveVisual() {
-    if (!this.swipeBackEnabled) return;
+    if (!this.swipeBackEnabled || this.hasFixedTargets()) return;
     const el=this.viewport();if(!this.current||!el)return;
     const offset = this.scrollElement()?.scrollTop ?? 0;
     this.current.visual=el.cloneNode(true) as HTMLElement;this.current.visual.dataset.stackflowScroll=String(offset);
@@ -74,7 +80,8 @@ export class NavigationEngine {
     readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number; waitForPage?: boolean },
     private readonly scrollElement = viewport,
     private readonly fixedTargets: () => readonly FixedTarget[] = () => [],
-    private readonly modalRoutes: () => readonly string[] = () => []) {}
+    private readonly modalRoutes: () => readonly string[] = () => [],
+    private readonly skeletonRoutes: () => readonly string[] = () => []) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   isPending = () => this.finish !== null;
   private emit() { this.listeners.forEach(fn => fn()); }
@@ -92,6 +99,19 @@ export class NavigationEngine {
   }
   private fresh(position: number) { return {id: this.win.crypto.randomUUID(), position}; }
   private url() { return this.win.location.pathname + this.win.location.search + this.win.location.hash; }
+  private readHistoryIndex() {
+    const index = (this.win as NavigationWindow).navigation?.currentEntry?.index;
+    return index !== undefined && index >= 0 ? index : undefined;
+  }
+  private recoverHistoryEntry(url: string, position: number, delta: number) {
+    let match: Entry | undefined;
+    for (const entry of this.entries.values()) {
+      if (entry.url !== url || (delta !== 0 && entry.position !== position + delta)) continue;
+      if (match) return this.fresh(position + delta);
+      match = entry;
+    }
+    return match ? { id: match.id, position: match.position } : this.fresh(position + delta);
+  }
   connect() {
     if (this.cleanup) return this.cleanup;
     this.disconnected = false;
@@ -99,6 +119,7 @@ export class NavigationEngine {
     const initial = metadata(history.state) ?? this.fresh(0);
     replace.call(history, {...history.state, [HISTORY_KEY]: initial}, '', this.win.location.href);
     this.current = this.remember(initial, this.url());
+    this.historyIndex = this.readHistoryIndex();
     const oldRestoration = history.scrollRestoration;
     if (this.options.preserveScroll) history.scrollRestoration = 'manual';
     const engine = this;
@@ -111,43 +132,56 @@ export class NavigationEngine {
       // A fresh push discards the forward branch.
       for (const [key, entry] of engine.entries) if (entry.position >= position) engine.entries.delete(key);
       engine.current = engine.remember(meta, engine.url());
+      engine.historyIndex = engine.readHistoryIndex();
     };
     const wrappedReplace: History['replaceState'] = function(data, unused, url) {
       if (engine.disconnected) return replace.call(history,data,unused,url);
       const meta = metadata(history.state) ?? engine.fresh(0);
       replace.call(history, {...data, [HISTORY_KEY]: meta}, unused, url);
       engine.current = engine.remember(meta, engine.url());
+      engine.historyIndex = engine.readHistoryIndex();
     };
     history.pushState = wrappedPush; history.replaceState = wrappedReplace;
     let replayedPop: PopStateEvent | undefined;
     const pop = (event: PopStateEvent) => {
       if (event === replayedPop) return;
-      const from = engine.current?.url ?? engine.url();
-      engine.capture();engine.saveVisual();
-      const state = history.state;
+      const destination = engine.url();
+      const from = engine.current?.url ?? destination;
+      const sameRoute = routeKey(new URL(from, engine.win.location.origin)) === routeKey(engine.win.location);
+      engine.capture();
+      if (!sameRoute) engine.saveVisual();
+      const state = event.state;
       const known = metadata(state);
-      const meta = known ?? engine.fresh(0);
-      engine.direction = meta.position < (engine.current?.position ?? 0) ? 'pop' : 'push';
-      if (!metadata(history.state)) replace.call(history, {...history.state,[HISTORY_KEY]:meta},'',engine.win.location.href);
-      engine.current = engine.remember(meta, engine.url());
-      if (engine.skipNextPopAnimation || event.hasUAVisualTransition) {
-        engine.skipNextPopAnimation = false;
+      const index = engine.readHistoryIndex();
+      const position = engine.current?.position ?? 0;
+      const delta = index !== undefined && engine.historyIndex !== undefined ? index - engine.historyIndex : 0;
+      const meta = known ?? engine.recoverHistoryEntry(destination, position, delta);
+      engine.direction = (delta || meta.position - position) < 0 ? 'pop' : 'push';
+      engine.historyIndex = index;
+      if (!known && state?.__NA === true) replace.call(history, {...state,[HISTORY_KEY]:meta},'',engine.win.location.href);
+      engine.current = engine.remember(meta, destination);
+      const skipAnimation = engine.skipNextPopAnimation || event.hasUAVisualTransition;
+      engine.skipNextPopAnimation = false;
+      if (sameRoute || skipAnimation) {
+        engine.cancelTransition();
+        if (sameRoute) {
+          if (from === destination) engine.restoreScroll();
+          engine.rebuild();
+        }
         return;
       }
-      const doc = engine.win.document as TransitionDocument;
-      if (known && state?.__NA === true && typeof doc.startViewTransition === 'function' && engine.options.animation !== 'none' &&
-          !engine.win.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      if (state?.__NA === true && engine.canAnimate()) {
         // Next can commit before the browser captures the outgoing screen. Deliver
         // its history event inside the snapshot callback so capture comes first.
         event.stopImmediatePropagation();
-        engine.begin(engine.direction, engine.url(), () => {
-          const PopEvent = doc.defaultView!.PopStateEvent;
+        engine.begin(engine.direction, destination, () => {
+          const PopEvent = engine.win.document.defaultView!.PopStateEvent;
           replayedPop = new PopEvent('popstate', { state });
-          engine.win.dispatchEvent(replayedPop);
-          replayedPop = undefined;
+          try { engine.win.dispatchEvent(replayedPop); }
+          finally { replayedPop = undefined; }
         }, from);
       } else {
-        engine.begin(engine.direction, engine.url(), () => {}, from);
+        engine.begin(engine.direction, destination, () => {}, from);
       }
     };
     this.win.addEventListener('popstate', pop, true);
@@ -184,8 +218,6 @@ export class NavigationEngine {
     clearTimeout(this.timeout);
     this.loadingObserver?.disconnect();
     this.loadingObserver = null;
-    this.cancelLoadingPaint?.();
-    this.cancelLoadingPaint = undefined;
     const finish = this.finish;
     this.finish = null;
     this.expected = null;
@@ -196,11 +228,16 @@ export class NavigationEngine {
   private finishWhenPageIsReady() {
     const viewport = this.viewport();
     const Observer = this.win.document.defaultView?.MutationObserver;
-    if (!this.options.waitForPage || !this.transition || !viewport || !Observer) {
+    if (!this.waitForDestination || !this.transition || !viewport || !Observer) {
       this.release();
       return;
     }
-    const ready = () => !Array.from(viewport.querySelectorAll('[data-stackflow-loading]')).some(element => element.getClientRects().length > 0);
+    const ready = () => {
+      for (const element of viewport.querySelectorAll('[data-stackflow-loading]')) {
+        if (element.getClientRects().length > 0) return false;
+      }
+      return true;
+    };
     if (ready()) {
       this.release();
       return;
@@ -231,20 +268,31 @@ export class NavigationEngine {
       this.transition.skipTransition();
     }
   };
-  begin(direction: Direction, href: string | null, action: () => void, from = this.current?.url ?? this.url()) {
+  private canAnimate() {
+    const doc = this.win.document as TransitionDocument;
+    return this.options.animation !== 'none' && typeof doc.startViewTransition === 'function' &&
+      !this.win.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  }
+  private cancelTransition() {
+    this.generation++;
     this.release(); this.transition?.skipTransition(); this.transition = null;
     this.clearTransitionBounds();
     this.clearPins();
     const { dataset } = this.win.document.documentElement;
     delete dataset.stackflowAnimating;
     delete dataset.stackflowModal;
+  }
+  begin(direction: Direction, href: string | null, action: () => void, from = this.current?.url ?? this.url()) {
+    this.cancelTransition();
+    const { dataset } = this.win.document.documentElement;
     const modal = this.modalMotion(from, href ?? this.url());
     this.direction = direction; this.expected = href;
-    this.win.document.documentElement.dataset.stackflowPending = 'true';
-    this.win.document.documentElement.dataset.stackflowDirection = direction;
+    const destination = routePathname(href ?? this.url());
+    this.waitForDestination = !!this.options.waitForPage && !this.skeletonRoutes().some(route => routePathname(route) === destination);
+    dataset.stackflowPending = 'true';
+    dataset.stackflowDirection = direction;
     const doc = this.win.document as TransitionDocument;
-    const reduced = this.win.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const generation = ++this.generation;
+    const generation = this.generation;
     let rejectPending: (error: unknown) => void = () => {};
     // Register the completion gate before the browser captures a snapshot.
     // On popstate Next may commit before the asynchronous update callback runs.
@@ -267,7 +315,7 @@ export class NavigationEngine {
       this.transition?.skipTransition();
     }, this.options.timeout);
     this.emit();
-    if ((direction !== 'replace' || modal) && doc.startViewTransition && !reduced && this.options.animation !== 'none') {
+    if ((direction !== 'replace' || modal) && this.canAnimate()) {
       const viewport = this.viewport();
       const selectors = modal ? [] : resolveFixedSelectors(this.fixedTargets(), from, href ?? this.url());
       if (viewport && selectors.length) {
@@ -284,8 +332,8 @@ export class NavigationEngine {
       this.transitionBounds = viewport?.getBoundingClientRect();
       if (modal) dataset.stackflowModal = modal;
       dataset.stackflowAnimating = 'true';
-      const start = () => { try {
-        const transition = doc.startViewTransition(run); this.transition = transition;
+      try {
+        const transition = doc.startViewTransition!(run); this.transition = transition;
         if (viewport) {
           const Observer = doc.defaultView?.ResizeObserver;
           const observer = Observer ? new Observer(this.checkTransitionBounds) : undefined;
@@ -301,24 +349,14 @@ export class NavigationEngine {
         }
         transition.ready.catch(()=>{});
         transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; } });
-      } catch { this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; void run().catch(()=>{}); } };
-      if (this.options.waitForPage && viewport) {
-        // Paint the loading UI before the browser freezes the outgoing frame.
-        let frame = this.win.requestAnimationFrame(() => {
-          frame = this.win.requestAnimationFrame(() => {
-            this.cancelLoadingPaint = undefined;
-            start();
-          });
-        });
-        this.cancelLoadingPaint = () => this.win.cancelAnimationFrame(frame);
-      } else start();
+      } catch { this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; void run().catch(()=>{}); }
     } else { void run().catch(()=>{}); }
   }
   navigate(direction: Direction, href: string | null, action: () => void) {
     // Traversals are animated once, by the popstate observer.
     if (href === null) { action(); return; }
     const destination = safeHref(href, this.win.location.href);
-    if (destination === this.url()) { action(); return; }
+    if (routeKey(new URL(destination, this.win.location.origin)) === routeKey(this.win.location)) { action(); return; }
     this.capture(); this.saveVisual(); this.begin(direction, destination, action);
   }
   commit(route: string) {

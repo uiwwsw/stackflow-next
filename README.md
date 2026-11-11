@@ -7,15 +7,14 @@ Stackflow integration.
 
 ## Install and configure
 
-Install the current prerelease from npm.
+Install from npm.
 
 ```sh
-npm install @uiwwsw/stackflow-next@next
+npm install @uiwwsw/stackflow-next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.12`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.12)
-and [live demo](https://stackflow-next.vercel.app/).
+See [npm](https://www.npmjs.com/package/@uiwwsw/stackflow-next) and the
+[live demo](https://stackflow-next.vercel.app).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
 to `withStackflow` if you already have one. The integration needs no
@@ -213,25 +212,43 @@ cache is memory-only and bounded by `maxEntries` (default 32).
 `useStack()` exposes Stackflow core's computed Stack; select `isTop` rather than
 assuming array order. Core computes navigation state; it does not render RSCs.
 
-By default the slide waits for the destination to render and any visible
-`StackLoading` boundaries to resolve. Use `<StackLoading />` in `loading.tsx`
-or as the `fallback` for a Suspense boundary whose content should be ready
-before the slide. Unmarked Suspense boundaries can continue streaming.
+By default the outgoing screen stays visible until the destination renders and
+its visible `StackLoading` boundaries resolve. Wrap the fallback in
+`loading.tsx` or Suspense with `<StackLoading>` to mark it as a readiness
+boundary. Unmarked Suspense boundaries can continue streaming.
+
+List a destination in `skeletonRoutes` to slide in its first render, which
+can be a skeleton from that route's `loading.tsx`. The skeleton is then
+replaced by the completed content in place. Next.js prefetching can make
+that fallback available earlier. The same rule applies when arriving via
+a link, browser Back, or browser Forward.
 
 ```tsx
-<StackflowProvider loading={<span>Preparing your page…</span>}>
+<StackflowProvider skeletonRoutes={['/checkout']}>
   {children}
 </StackflowProvider>
 ```
 
-`loading` sets the shared indicator and the default content of `StackLoading`.
-Pass children to `StackLoading` to customize a specific fallback. Pass
-`loading={null}` to hide the shared indicator, or `waitForPage={false}` to slide
-as soon as the destination first renders. A navigation timeout
-(default 4000ms) releases a stalled snapshot. Redirects and competing history or
-View Transition libraries require application-specific testing.
+```tsx
+// app/checkout/loading.tsx
+import { StackLoading } from '@uiwwsw/stackflow-next';
+import { CheckoutSkeleton } from './checkout-skeleton';
 
-Browsers without View Transitions use ordinary navigation. Only same-origin
+export default function Loading() {
+  return <StackLoading><CheckoutSkeleton /></StackLoading>;
+}
+```
+
+`waitForPage={false}` enables first-render transitions across the provider.
+In 1.0, the `loading` prop supplies default content for `StackLoading` and
+can be set to `null` for a marker with no visible content. The outgoing
+screen stays visible without a provider-wide loading overlay. The
+`navigationTimeout` option (default 4000 ms) releases a stalled snapshot.
+Redirects and competing history or View Transition libraries require
+application-specific testing.
+
+Browsers without View Transitions use ordinary navigation. Initial page loads,
+reloads, and links activated before hydration follow browser navigation. Only same-origin
 HTTP(S) destinations are supported by the router helper. Ordinary Next Links
 still work but forward snapshot motion requires StackLink or useStackRouter.
 
