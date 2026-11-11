@@ -6,8 +6,10 @@ import { NavigationEngine, safeHref, type RouteTransition } from './engine.js';
 import { attachSwipeBack } from './swipe.js';
 import { attachScrollViewport } from './scroll.js';
 import type { FixedTarget } from './fixed-targets.js';
+import { createSkeletonRouteMatcher, type SkeletonRoute } from './skeleton-routes.js';
 export type { FixedTarget } from './fixed-targets.js';
 export type { RouteTransition } from './engine.js';
+export type { SkeletonRoute } from './skeleton-routes.js';
 export { StackMotion, type StackMotionPreset, type StackMotionProps } from './motion.js';
 
 const Context = createContext<NavigationEngine | null | undefined>(undefined);
@@ -15,6 +17,12 @@ function useEngine() { const engine=useContext(Context); if(engine===undefined) 
 const noopSubscribe = () => () => {};
 const emptyStack = () => null;
 const defaultLoading = <span>Loading…</span>;
+const loadingMessages = new Map([
+  ['ko', '불러오는 중…'], ['ja', '読み込み中…'], ['zh', '正在加载…'],
+  ['es', 'Cargando…'], ['fr', 'Chargement…'], ['de', 'Wird geladen…'],
+  ['pt', 'Carregando…'], ['ar', 'جارٍ التحميل…'],
+]);
+
 const LoadingContext = createContext<ReactNode>(defaultLoading);
 
 /** Use in loading.tsx or a Suspense fallback for content that must be ready before the slide. */
@@ -53,19 +61,21 @@ export interface StackflowProviderProps {
   navigationTimeout?: number;
   /** Wait for visible StackLoading boundaries to finish before animating. Defaults to true. */
   waitForPage?: boolean;
-  /** Pathnames that can slide in with their loading fallback visible. */
-  skeletonRoutes?: readonly string[];
+  /** Exact pathnames or regular expressions that can slide in with their loading fallback visible. */
+  skeletonRoutes?: readonly SkeletonRoute[];
   /** Default content for StackLoading. Pass null for an invisible readiness marker. */
   loading?: ReactNode;
+  /** BCP 47 locale for the default loading message. */
+  locale?: string;
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,skeletonRoutes,loading=defaultLoading,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
   const modals = useRef<readonly string[]>([]);
   const transitions = useRef<readonly RouteTransition[]>([]);
-  const skeletons = useRef<readonly string[]>([]);
+  const matchesSkeletonRoute = useRef<(href: string) => boolean>(() => false);
   const indicator=useRef<HTMLDivElement>(null);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
   const engineRef=useRef<NavigationEngine | null>(null);
@@ -73,7 +83,9 @@ export function StackflowProvider({children,header,footer,persistent,animation='
   const router=useRouter();
   useLayoutEffect(() => { modals.current = modalRoutes ?? []; }, [modalRoutes]);
   useLayoutEffect(() => { transitions.current = transitionRoutes ?? []; }, [transitionRoutes]);
-  useLayoutEffect(() => { skeletons.current = skeletonRoutes ?? []; }, [skeletonRoutes]);
+  useLayoutEffect(() => {
+    matchesSkeletonRoute.current = createSkeletonRouteMatcher(skeletonRoutes ?? []);
+  }, [skeletonRoutes]);
   useLayoutEffect(() => {
     if (fixedTargets == null) fixed.current = [];
     else if (typeof fixedTargets === 'string' || 'selector' in fixedTargets) fixed.current = [fixedTargets];
@@ -95,7 +107,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
     const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries,waitForPage},
-      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, () => skeletons.current, () => transitions.current);
+      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, href => matchesSkeletonRoute.current(href), () => transitions.current);
     const disconnect=value.connect(); engineRef.current=value; setEngine(value);
     return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
   },[animation,preserveScroll,maxEntries,navigationTimeout,waitForPage]);
@@ -105,7 +117,9 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     if(!swipeBack||!viewport.current)return;
     return attachSwipeBack(engine,viewport.current,()=>router.back());
   },[swipeBack,engine,router]);
-  return <Context.Provider value={engine}><LoadingContext.Provider value={loading}>
+  const message = locale && loadingMessages.get(locale.toLowerCase().split('-', 1)[0]);
+  const fallback = message ? <span lang={locale} dir="auto">{message}</span> : defaultLoading;
+  return <Context.Provider value={engine}><LoadingContext.Provider value={loading === undefined ? fallback : loading}>
     <div className={`stackflow-next ${className}`} style={style}>
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">

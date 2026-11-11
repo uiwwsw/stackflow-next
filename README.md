@@ -276,10 +276,18 @@ that fallback available earlier. The same rule applies when arriving via
 a link, browser Back, or browser Forward.
 
 ```tsx
-<StackflowProvider skeletonRoutes={['/checkout']}>
+<StackflowProvider
+  skeletonRoutes={['/checkout', { pattern: '^/products/[^/]+$' }]}
+>
   {children}
 </StackflowProvider>
 ```
+
+Exact paths can be mixed with regular expressions. Patterns test the app
+pathname without the Next.js `basePath`, search parameters, or hash. Use
+`{ pattern, flags? }` in a Server Component such as `app/layout.tsx`.
+Client Components can also use a `RegExp` literal, such as
+`/^\/products\/[^/]+$/`.
 
 ```tsx
 // app/checkout/loading.tsx
@@ -327,3 +335,16 @@ The Next demo includes a plain useState counter, per-entry memo, scrollable
 list, detail route and a streamed Server Component. Package installation and
 CSS/type exports can be checked with `scripts/verify-release.mjs` through the
 workspace development wrapper.
+
+## Localize the loading message
+
+Pass your app's locale to the provider. The built-in loading message supports
+English, Korean, Japanese, Chinese, Spanish, French, German, Portuguese, and
+Arabic. Region variants use their primary language. Other locales use English.
+
+```tsx
+<StackflowProvider locale="ja-JP">{children}</StackflowProvider>
+```
+
+Pass `loading={translatedContent}` to use your app's own translations for any
+locale. A `StackLoading` instance can also supply its own children.

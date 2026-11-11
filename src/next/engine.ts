@@ -92,7 +92,7 @@ export class NavigationEngine {
     private readonly scrollElement = viewport,
     private readonly fixedTargets: () => readonly FixedTarget[] = () => [],
     private readonly modalRoutes: () => readonly string[] = () => [],
-    private readonly skeletonRoutes: () => readonly string[] = () => [],
+    private readonly matchesSkeletonRoute: (href: string) => boolean = () => false,
     private readonly transitionRoutes: () => readonly RouteTransition[] = () => []) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   isPending = () => this.finish !== null;
@@ -333,7 +333,7 @@ export class NavigationEngine {
       started: false,
     };
     this.navigation = navigation;
-    this.waitForDestination = !!this.options.waitForPage && !this.skeletonRoutes().some(route => matchesRoute(route, this.appHref(destination)));
+    this.waitForDestination = !!this.options.waitForPage && !this.matchesSkeletonRoute(this.appHref(destination));
     dataset.stackflowPending = 'true';
     dataset.stackflowDirection = direction === 'replace' && animateReplace ? 'push' : direction;
     const doc = this.win.document as TransitionDocument;
