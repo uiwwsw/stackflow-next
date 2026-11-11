@@ -180,6 +180,8 @@ export class NavigationEngine {
       const from = engine.current?.url ?? destination;
       const destinationRoute = routeKey(engine.win.location);
       const sourceRoute = routeKey(new URL(from, engine.win.location.origin));
+      // The history cursor can advance twice before the first destination paints.
+      const visualSource = engine.renderedRoute ?? from;
       const sameRoute = sourceRoute === destinationRoute;
       const alreadyRendered = engine.renderedRoute === destinationRoute;
       if (engine.renderedRoute === sourceRoute) {
@@ -206,7 +208,7 @@ export class NavigationEngine {
         }
         return;
       }
-      if (state?.__NA === true && engine.canAnimate() && !engine.motion(from, destination).disabled) {
+      if (state?.__NA === true && engine.canAnimate() && !engine.motion(visualSource, destination).disabled) {
         // Next can commit before the browser captures the outgoing screen. Deliver
         // its history event inside the snapshot callback so capture comes first.
         event.stopImmediatePropagation();
@@ -215,9 +217,9 @@ export class NavigationEngine {
           replayedPop = new PopEvent('popstate', { state });
           try { engine.win.dispatchEvent(replayedPop); }
           finally { replayedPop = undefined; }
-        }, from);
+        }, visualSource);
       } else {
-        engine.begin(engine.direction, destination, () => {}, from);
+        engine.cancelTransition();
       }
     };
     this.win.addEventListener('popstate', pop, true);
@@ -389,7 +391,7 @@ export class NavigationEngine {
             this.win.removeEventListener('scroll', this.checkTransitionBounds);
           };
         }
-        transition.ready.catch(()=>{});
+        transition.ready.catch(() => { void run().catch(() => {}); });
         transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; } });
       } catch { this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; void run().catch(()=>{}); }
     } else { void run().catch(()=>{}); }

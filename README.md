@@ -119,8 +119,7 @@ Declare the rule once on the shared provider. If `/checkout` renders without
 the header, the header slides out on entry and returns with the previous page
 on Back. Forward applies the same route exception. The header stays still
 between other routes when its DOM node and bounds stay
-the same. Exceptions match exact pathnames and any query pairs in the rule, ignoring fragments
-and trailing slashes. The app renders the header appropriate to the current
+the same. Exceptions match exact pathnames. The app renders the header appropriate to the current
 route. Mix exception rules and plain selectors in an array to control each
 element independently.
 
@@ -142,9 +141,8 @@ opened and down when leaving, including through browser Back and Forward.
 ```
 
 Open with `StackLink` or `useStackRouter().push()` and close with
-`useStackRouter().back()`. A pathname-only rule matches all queries on that
-path. A rule with query pairs requires those pairs. Fragments and trailing
-slashes do not affect the match. Motion applies to the provider's content area.
+`useStackRouter().back()`. Rules match the app pathname. Fragments and trailing
+slashes in a destination do not affect the match. Motion applies to the provider's content area.
 For a viewport-sized popup, give the provider a viewport height and render the
 UI to cover its content area. Shared `header`, `footer`, and `persistent` slots
 sit outside that area. Elements inside the content area participate in the
@@ -154,33 +152,57 @@ Direct loads render immediately, and navigation between two modal routes uses
 the regular horizontal slide. This option controls route motion. The app owns
 the popup content and its close control.
 
-## Animate query-driven screens
+## Animate a component
 
 ```tsx
-<StackflowProvider
-  transitionRoutes={[
-    { href: '/feed?panel=filters', animation: 'modal' },
-    { href: '/feed?panel=details', animation: 'ios' },
-    { href: '/feed?panel=inline', animation: 'none' },
-  ]}
-  skeletonRoutes={['/feed?panel=details']}
-  fixedTargets={{ selector: '#header', exceptRoutes: ['/feed?panel=details'] }}
->
-  {children}
-</StackflowProvider>
+'use client';
+
+import { useState } from 'react';
+import { StackMotion } from '@uiwwsw/stackflow-next';
+import '@uiwwsw/stackflow-next/style.css';
+
+export function Details() {
+  const [open, setOpen] = useState(false);
+  return <>
+    <button aria-expanded={open} onClick={() => setOpen(value => !value)}>
+      Toggle details
+    </button>
+    <StackMotion open={open} enter="modal" exit="ios">
+      <p>Details</p>
+    </StackMotion>
+  </>;
+}
 ```
 
-The first matching rule applies to each URL. Required query pairs can appear
-in any order alongside other parameters. Entering a `modal` route slides up
-and leaving it slides down. `ios` uses the horizontal slide, and `none`
-disables animation when entering or leaving that route. Use `StackLink` or
-`useStackRouter().push()` to create an entry for browser Back and Forward.
-`replace()` can animate an explicit rule without adding an entry.
+`StackMotion` works independently of the navigation provider. Use `ios` for
+a horizontal slide, `modal` for a vertical slide, or `none` for an immediate
+change. Set `animation` to use one preset for both phases. `enter` and `exit`
+override each phase separately.
 
-`modalRoutes`, `skeletonRoutes`, and `fixedTargets.exceptRoutes` also accept
-pathnames with query pairs. In this example the details panel can slide in
-with its skeleton and the header slides with it. Use application paths without
-the Next.js `basePath` prefix in these rules.
+Apply the same presets directly to an existing element with
+`data-sfn-enter` and `data-sfn-exit`. Toggle `hidden` to run the transitions.
+
+```tsx
+<section hidden={!open} inert={!open} data-sfn-enter="modal" data-sfn-exit="ios">
+  <p>Details</p>
+</section>
+```
+
+Keep the element mounted so it can animate closing and preserve child state.
+`StackMotion` makes its closed wrapper inert. The app owns layout, focus
+management, and dialog semantics. Page and component slides share
+`--stackflow-duration` and `--stackflow-easing`. The component changes
+visibility immediately when the browser cannot animate the transition or the
+user prefers reduced motion.
+
+### Upgrade from 1.1
+
+Remove rules containing a query from `transitionRoutes`, `modalRoutes`,
+`skeletonRoutes`, and `fixedTargets.exceptRoutes`. Version 2 skips those rules.
+Use `StackMotion` with local state for panels and popups on the same page.
+Route options still accept exact application pathnames without the Next.js
+`basePath` prefix. `transitionRoutes` uses the first matching pathname rule.
+Search parameters in Next.js URLs and browser history continue to work.
 
 ## Choose which area scrolls
 

@@ -8,17 +8,20 @@ export const metadata = {
   description: 'Next.js App Router를 유지하는 스택 전환, 스크롤과 입력 상태 복원 데모.',
 };
 
-const example = `import { StackflowProvider } from '@uiwwsw/stackflow-next';
+const example = `import { StackflowProvider, StackMotion } from '@uiwwsw/stackflow-next';
 import '@uiwwsw/stackflow-next/style.css';
 
 <StackflowProvider
   fixedTargets="[data-demo-fixed]"
   scrollTarget="[data-demo-scroll]"
   skeletonRoutes={['/skeleton']}
-  transitionRoutes={[{ href: '/detail?panel=map', animation: 'modal' }]}
 >
   {children}
-</StackflowProvider>`;
+</StackflowProvider>
+
+<StackMotion open={open} enter="modal" exit="ios">
+  <MapContent />
+</StackMotion>`;
 
 export default function Layout({children}: {children: ReactNode}) {
   return <html lang="ko"><body>
