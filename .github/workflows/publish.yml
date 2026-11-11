@@ -1,10 +1,10 @@
-name: Publish npm prerelease
+name: Publish npm release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact prerelease version from package.json
+        description: Exact version from package.json
         required: true
         type: string
 
@@ -37,11 +37,14 @@ jobs:
             const { name, version } = require("./package.json");
             if (name !== "@uiwwsw/stackflow-next" ||
                 version !== process.env.RELEASE_VERSION ||
-                !/^\d+\.\d+\.\d+-[\da-zA-Z.-]+$/.test(version)) {
-              throw new Error("Select the exact prerelease version from package.json");
+                !/^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?$/.test(version)) {
+              throw new Error("Select the exact release version from package.json");
             }
           '
       - run: npm ci
       - run: npm test
       - run: npm run check
-      - run: npm publish --access public --tag next --registry=https://registry.npmjs.org
+      - name: Publish to npm
+        run: |
+          tag=$(node -p 'require("./package.json").version.includes("-") ? "next" : "latest"')
+          npm publish --access public --tag "$tag" --registry=https://registry.npmjs.org
