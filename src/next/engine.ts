@@ -1,3 +1,4 @@
+import { captureSlide } from './slide-fallback.js';
 import { aggregate, makeEvent, type DomainEvent, type Stack } from '@stackflow/core';
 import { findFixedTargets, matchesRoute, pinForTransition, resolveFixedSelectors, routePathname, type FixedTarget } from './fixed-targets.js';
 
@@ -7,7 +8,14 @@ export type Direction = 'push' | 'pop' | 'replace';
 export type RouteTransition = { href: string; animation: 'ios' | 'modal' | 'none' };
 type Transition = { finished: Promise<void>; ready: Promise<void>; skipTransition(): void };
 type TransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => Transition };
-type NavigationWindow = Window & { navigation?: { currentEntry?: { index: number } | null } };
+type NavigationWindow = Window & { navigation?: EventTarget & { currentEntry?: { index: number } | null } };
+type TraverseEvent = Event & {
+  navigationType: string;
+  destination: { sameDocument: boolean; url: string; index: number };
+  signal?: AbortSignal;
+  hasUAVisualTransition?: boolean;
+};
+type Slide = ReturnType<typeof captureSlide>;
 export function safeHref(href: string, base: string) {
   const url = new URL(href, base), origin = new URL(base).origin;
   if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol) || url.pathname.startsWith('//')) {
@@ -40,6 +48,7 @@ export class NavigationEngine {
   private navigation: { expected: string | null; source: string; started: boolean } | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private transition: Transition | null = null;
+  private clearSlide: (() => void) | undefined;
   private transitionBounds: DOMRect | undefined;
   private stopWatchingBounds: (() => void) | undefined;
   private pins: (NonNullable<ReturnType<typeof pinForTransition>> & { selectors: readonly string[] }) | null = null;
@@ -69,7 +78,7 @@ export class NavigationEngine {
     const source = this.routeAnimation(this.appHref(from));
     const destination = this.routeAnimation(this.appHref(to));
     const disabled = source === 'none' || destination === 'none';
-    const modal = source === 'modal' && destination !== 'modal' ? 'exit'
+    const modal: 'enter' | 'exit' | undefined = source === 'modal' && destination !== 'modal' ? 'exit'
       : destination === 'modal' && source !== 'modal' ? 'enter' : undefined;
     return { disabled, modal, animateReplace: !!modal || source === 'ios' || destination === 'ios' };
   }
@@ -173,6 +182,34 @@ export class NavigationEngine {
       engine.historyIndex = engine.readHistoryIndex();
     };
     history.pushState = wrappedPush; history.replaceState = wrappedReplace;
+    const browserNavigation = (this.win as NavigationWindow).navigation;
+    let earlyTraversal: { destination: string; source: string; slide: Slide; signal?: AbortSignal } | undefined;
+    const prepareTraversal = (event: Event) => {
+      const traversal = event as TraverseEvent;
+      if (traversal.navigationType !== 'traverse') return;
+      earlyTraversal?.slide?.dispose();
+      earlyTraversal = undefined;
+      if (!traversal.destination.sameDocument || traversal.hasUAVisualTransition ||
+          engine.skipNextPopAnimation || !engine.canAnimate()) return;
+      const url = new URL(traversal.destination.url);
+      if (url.origin !== engine.win.location.origin) return;
+      const destination = url.pathname + url.search + url.hash;
+      const source = engine.renderedRoute ?? engine.url();
+      const { disabled, modal } = engine.motion(source, destination);
+      const viewport = engine.viewport();
+      if (!viewport || disabled) return;
+      const direction = traversal.destination.index < (engine.readHistoryIndex() ?? -1) ? 'pop' : 'push';
+      const slide = captureSlide(viewport, engine.scrollElement(), direction, modal);
+      if (!slide) return;
+      const prepared = { destination, source, slide, signal: traversal.signal };
+      earlyTraversal = prepared;
+      traversal.signal?.addEventListener('abort', () => {
+        if (earlyTraversal !== prepared) return;
+        slide.dispose();
+        earlyTraversal = undefined;
+      }, { once: true });
+    };
+    browserNavigation?.addEventListener?.('navigate', prepareTraversal);
     let replayedPop: PopStateEvent | undefined;
     const pop = (event: PopStateEvent) => {
       if (event === replayedPop) return;
@@ -181,7 +218,11 @@ export class NavigationEngine {
       const destinationRoute = routeKey(engine.win.location);
       const sourceRoute = routeKey(new URL(from, engine.win.location.origin));
       // The history cursor can advance twice before the first destination paints.
-      const visualSource = engine.renderedRoute ?? from;
+      const prepared = earlyTraversal;
+      earlyTraversal = undefined;
+      const usePrepared = prepared?.destination === destination && !prepared.signal?.aborted;
+      if (!usePrepared) prepared?.slide?.dispose();
+      const visualSource = (usePrepared ? prepared.source : engine.renderedRoute) ?? from;
       const sameRoute = sourceRoute === destinationRoute;
       const alreadyRendered = engine.renderedRoute === destinationRoute;
       if (engine.renderedRoute === sourceRoute) {
@@ -219,8 +260,9 @@ export class NavigationEngine {
             engine.checkTransitionBounds();
             engine.finishWhenPageIsReady();
           }
-        }, visualSource);
+        }, visualSource, usePrepared ? prepared.slide : undefined, usePrepared && alreadyRendered && visualSource !== destinationRoute);
       } else {
+        prepared?.slide?.dispose();
         engine.cancelTransition();
         if (alreadyRendered || sameRoute) syncRenderedEntry();
       }
@@ -228,11 +270,14 @@ export class NavigationEngine {
     this.win.addEventListener('popstate', pop, true);
     this.rebuild();
     this.cleanup = () => {
-      this.disconnected = true; this.release(); this.transition?.skipTransition(); this.clearTransitionBounds(); this.clearPins();
+      this.disconnected = true; this.clearSlide?.(); this.release(); this.transition?.skipTransition(); this.clearTransitionBounds(); this.clearPins();
       if (history.pushState === wrappedPush) history.pushState = push;
       if (history.replaceState === wrappedReplace) history.replaceState = replace;
       history.scrollRestoration = oldRestoration;
       this.win.removeEventListener('popstate', pop, true);
+      browserNavigation?.removeEventListener?.('navigate', prepareTraversal);
+      earlyTraversal?.slide?.dispose();
+      earlyTraversal = undefined;
       delete this.win.document.documentElement.dataset.stackflowDirection;
       delete this.win.document.documentElement.dataset.stackflowAnimating;
       delete this.win.document.documentElement.dataset.stackflowModal;
@@ -269,7 +314,7 @@ export class NavigationEngine {
   private finishWhenPageIsReady() {
     const viewport = this.viewport();
     const Observer = this.win.document.defaultView?.MutationObserver;
-    if (!this.waitForDestination || !this.transition || !viewport || !Observer) {
+    if (!this.waitForDestination || (!this.transition && !this.clearSlide) || !viewport || !Observer) {
       this.release();
       return;
     }
@@ -316,6 +361,8 @@ export class NavigationEngine {
   }
   private cancelTransition() {
     this.generation++;
+    this.clearSlide?.();
+    this.clearSlide = undefined;
     this.release(); this.transition?.skipTransition(); this.transition = null;
     this.clearTransitionBounds();
     this.clearPins();
@@ -323,7 +370,8 @@ export class NavigationEngine {
     delete dataset.stackflowAnimating;
     delete dataset.stackflowModal;
   }
-  begin(direction: Direction, href: string | null, action: () => void, from = this.current?.url ?? this.url()) {
+  begin(direction: Direction, href: string | null, action: () => void, from = this.current?.url ?? this.url(),
+    preparedSlide?: Slide, forceFallback = false) {
     this.cancelTransition();
     const { dataset } = this.win.document.documentElement;
     const destination = href ?? this.url();
@@ -357,15 +405,28 @@ export class NavigationEngine {
       try { action(); } catch (error) { rejectPending(error); this.release(); }
       return pending;
     };
+    const animate = !disabled && (direction !== 'replace' || animateReplace) && this.canAnimate();
+    const viewport = this.viewport();
+    const slide = preparedSlide ?? (animate && viewport ? captureSlide(viewport, this.scrollElement(), direction, modal) : undefined);
+    this.clearSlide = slide?.dispose;
+    // Native snapshots have a finite lifetime. Keep the outgoing visual if
+    // that lifetime ends before Next has streamed and committed the page.
+    const useFallback = () => {
+      if (!slide || this.disconnected || generation !== this.generation) return;
+      if (this.isPending()) slide.hold();
+      else slide.play();
+    };
+    pending.then(() => {
+      if (!this.disconnected && generation === this.generation) slide?.commit();
+    }, () => slide?.dispose());
     this.timeout = setTimeout(() => {
-      // A delayed snapshot must never prevent the navigation action from running.
-      void run().catch(() => {});
-      this.release();
+      if (slide) useFallback();
       this.transition?.skipTransition();
+      void run().catch(() => {});
+      if (!slide) this.release();
     }, this.options.timeout);
     this.emit();
-    if (!disabled && (direction !== 'replace' || animateReplace) && this.canAnimate()) {
-      const viewport = this.viewport();
+    if (animate && !forceFallback) {
       const selectors = modal ? [] : resolveFixedSelectors(this.fixedTargets(), this.appHref(from), this.appHref(destination));
       if (viewport && selectors.length) {
         const targets = findFixedTargets(viewport, selectors);
@@ -393,10 +454,22 @@ export class NavigationEngine {
             this.win.removeEventListener('scroll', this.checkTransitionBounds);
           };
         }
-        transition.ready.catch(() => { void run().catch(() => {}); });
+        transition.ready.then(() => {
+          slide?.dispose();
+          if (generation === this.generation) {
+            this.clearSlide = undefined;
+            this.clearTransitionBounds();
+          }
+        }, () => {
+          useFallback();
+          void run().catch(() => {});
+        });
         transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; } });
       } catch { this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; void run().catch(()=>{}); }
-    } else { void run().catch(()=>{}); }
+    } else {
+      if (forceFallback) useFallback();
+      void run().catch(() => {});
+    }
   }
   navigate(direction: Direction, href: string | null, action: () => void) {
     // Traversals are animated once, by the popstate observer.

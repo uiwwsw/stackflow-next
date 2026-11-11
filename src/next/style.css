@@ -78,3 +78,16 @@ html[data-stackflow-direction]::view-transition-new(*){pointer-events:none}
 ::view-transition-group(.stackflow-fixed){animation:none;z-index:3}
 ::view-transition-image-pair(.stackflow-fixed),::view-transition-new(.stackflow-fixed){animation:none;mix-blend-mode:normal}
 ::view-transition-old(.stackflow-fixed){display:none}
+
+.stackflow-next-content[data-stackflow-slide-snapshot]{
+  position:absolute;inset:0;z-index:2;pointer-events:none;view-transition-name:none
+}
+.stackflow-next-content[data-stackflow-slide-snapshot=under]{z-index:0}
+.stackflow-next-content[data-stackflow-slide-incoming]{position:relative;z-index:1}
+.stackflow-next-content[data-stackflow-slide-snapshot=pop]{animation-name:stackflow-leave}
+.stackflow-next-content[data-stackflow-slide-snapshot=modal-exit]{animation-name:stackflow-modal-exit}
+.stackflow-next-content[data-stackflow-slide-incoming=push]{animation-name:stackflow-enter}
+.stackflow-next-content[data-stackflow-slide-incoming=modal]{animation-name:stackflow-modal-enter}
+.stackflow-next-content:is([data-stackflow-slide-snapshot=pop],[data-stackflow-slide-snapshot=modal-exit],[data-stackflow-slide-incoming]){
+  animation-duration:var(--stackflow-duration);animation-timing-function:var(--stackflow-easing);animation-fill-mode:both
+}

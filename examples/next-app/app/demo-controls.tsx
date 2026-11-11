@@ -29,7 +29,8 @@ function MotionStatus() {
   const [motion, setMotion] = useState({count: 0, label: ''});
   useEffect(() => {
     function onAnimationStart(event: AnimationEvent) {
-      if (event.target !== document.documentElement) return;
+      if (event.target !== document.documentElement && !(event.target instanceof HTMLElement &&
+        (event.target.hasAttribute('data-stackflow-slide-snapshot') || event.target.hasAttribute('data-stackflow-slide-incoming')))) return;
       const label = motions.get(event.animationName);
       if (label) setMotion(previous => ({count: previous.count + 1, label}));
     }

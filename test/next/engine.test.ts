@@ -107,6 +107,47 @@ test('Back between entries for the same rendered route plays the reverse slide',
   }
 });
 
+test('the Navigation API captures the outgoing screen before a browser traversal commits', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const content = win.document.createElement('main');
+  win.document.body.append(content);
+  const navigation = Object.assign(new win.EventTarget(), { currentEntry: { index: 0 } });
+  Object.defineProperty(win, 'navigation', { value: navigation });
+  win.history.replaceState({ __NA: true }, '');
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => content as unknown as HTMLElement, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
+  });
+  let nativeCalls = 0;
+  (win.document as any).startViewTransition = () => { nativeCalls++; throw Error('Snapshot unavailable'); };
+  engine.connect();
+  try {
+    const home = win.history.state;
+    navigation.currentEntry.index = 1;
+    win.history.pushState({ __NA: true }, '', '/detail');
+    engine.commit('/detail');
+    content.textContent = 'Outgoing detail';
+
+    const event = Object.assign(new win.Event('navigate'), {
+      navigationType: 'traverse', destination: { sameDocument: true, url: 'http://localhost/', index: 0 },
+      signal: new win.AbortController().signal,
+    });
+    navigation.dispatchEvent(event);
+    navigation.currentEntry.index = 0;
+    Object.getPrototypeOf(win.history).replaceState.call(win.history, home, '', '/');
+    content.textContent = 'Incoming home';
+    engine.commit('/');
+    win.dispatchEvent(new win.PopStateEvent('popstate', { state: home }));
+    await Promise.resolve();
+    const snapshot = win.document.querySelector('[data-stackflow-slide-snapshot=pop]');
+    assert.equal(nativeCalls, 0);
+    assert.equal(snapshot?.textContent, 'Outgoing detail');
+    assert.equal(engine.direction, 'pop');
+    assert.equal(engine.isPending(), false);
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('two quick Back events capture the rendered route when the intermediate entry has no animation', async () => {
   const win = new Window({ url: 'http://localhost/' });
   const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
@@ -462,6 +503,48 @@ test('the slide waits for a visible loading boundary after the destination commi
     loading.remove();
     await pending;
     assert.equal(engine.isPending(), false);
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('a slow route keeps the outgoing visual past the native deadline and slides when ready', async () => {
+  const { engine, window, el } = setup();
+  window.document.body.append(el);
+  el.textContent = 'Outgoing page';
+  const loading = window.document.createElement('div');
+  loading.setAttribute('data-stackflow-loading', '');
+  Object.defineProperty(loading, 'getClientRects', { value: () => ({ length: 1 }) });
+  engine.options.animation = 'ios';
+  engine.options.waitForPage = true;
+  let completeUpdate: Promise<void>;
+  let rejectSnapshot: (error: Error) => void = () => {};
+  const ready = new Promise<void>((_, reject) => { rejectSnapshot = reject; });
+  (window.document as any).startViewTransition = (update: () => Promise<void>) => {
+    completeUpdate = Promise.resolve().then(update);
+    return { ready, finished: new Promise(() => {}), skipTransition() { rejectSnapshot(new Error('Snapshot expired')); } };
+  };
+
+  try {
+    engine.navigate('push', '/slow', () => {
+      window.history.pushState({}, '', '/slow');
+      el.replaceChildren(loading);
+    });
+    await Promise.resolve();
+    engine.commit('/slow');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const snapshot = window.document.querySelector('[data-stackflow-slide-snapshot]');
+    assert.equal(snapshot?.textContent, 'Outgoing page');
+    assert.equal(engine.isPending(), true);
+    assert.equal(el.dataset.stackflowSlideIncoming, undefined);
+
+    loading.replaceWith('Destination page');
+    await completeUpdate!;
+    await Promise.resolve();
+    assert.equal(engine.isPending(), false);
+    assert.equal(el.dataset.stackflowSlideIncoming, 'push');
+    el.dispatchEvent(new window.Event('animationend'));
+    assert.equal(snapshot?.isConnected, false);
   } finally {
     engine.dispose();
   }
