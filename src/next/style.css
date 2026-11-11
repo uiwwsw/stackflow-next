@@ -1,26 +1,26 @@
-.stackflow-next{display:flex;flex-direction:column;position:relative;min-height:0;height:100%;overflow:hidden;isolation:isolate;background:var(--stackflow-background,Canvas)}
-.stackflow-next-content{background-color:var(--stackflow-background,Canvas);height:100%;view-transition-name:stackflow-next-content}
+.stackflow-next{display:flex;flex-direction:column;position:relative;min-height:0;height:100%;overflow:hidden;isolation:isolate}
+.stackflow-next,.stackflow-next-content,.stackflow-next-viewport{background-color:Canvas;background-image:linear-gradient(var(--stackflow-background,transparent),var(--stackflow-background,transparent))}
+.stackflow-next-content{height:100%;view-transition-name:stackflow-next-content}
 .stackflow-next-content,:where([data-stackflow-scroll-target]){overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
 .stackflow-next-content::-webkit-scrollbar,[data-stackflow-scroll-target]::-webkit-scrollbar{display:none}
 .stackflow-next-content[data-stackflow-scroll-delegated]{overflow:clip}
 .stackflow-next :where(a,button,[role=button], [data-app-control]){-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;user-select:none}
 .stackflow-next :where(input,textarea,[contenteditable=true],[data-selectable]){user-select:text;-webkit-touch-callout:default}
 .stackflow-next-indicator{position:absolute;top:0;right:3px;width:3px;z-index:10;border-radius:3px;background:var(--stackflow-indicator,#8888);pointer-events:none;opacity:0;transition:opacity .15s}
-html[data-stackflow-direction]::view-transition-old(root),html[data-stackflow-direction]::view-transition-new(root){animation:none}
-/* Capture the moving body without including the shared slot in a root snapshot. */
-html[data-stackflow-animating]:has(.stackflow-next > .stackflow-next-persistent){view-transition-name:none}
-::view-transition-group(stackflow-next-content){animation-duration:var(--stackflow-duration,280ms);overflow:hidden}
-::view-transition-old(stackflow-next-content),::view-transition-new(stackflow-next-content){animation-duration:var(--stackflow-duration,280ms);animation-timing-function:cubic-bezier(.2,.7,.2,1);mix-blend-mode:normal}
+/* Only the body participates; fixed slots and the document stay live. */
+html[data-stackflow-animating]{view-transition-name:none}
+/* Keep browser-generated size/position interpolation off the horizontal slide. */
+::view-transition-group(stackflow-next-content),::view-transition-image-pair(stackflow-next-content){animation-name:none}
+::view-transition-group(stackflow-next-content){overflow:hidden}
+::view-transition-old(stackflow-next-content),::view-transition-new(stackflow-next-content){animation-duration:var(--stackflow-duration,280ms);animation-timing-function:cubic-bezier(.2,.7,.2,1);animation-fill-mode:both;mix-blend-mode:normal}
 html[data-stackflow-direction=push]::view-transition-old(stackflow-next-content){animation-name:stackflow-retreat}
 html[data-stackflow-direction=push]::view-transition-new(stackflow-next-content){animation-name:stackflow-enter}
 html[data-stackflow-direction=pop]::view-transition-old(stackflow-next-content){animation-name:stackflow-leave;z-index:2}
 html[data-stackflow-direction=pop]::view-transition-new(stackflow-next-content){animation-name:stackflow-return;z-index:1}
-html[data-stackflow-direction=replace]::view-transition-old(stackflow-next-content){animation-name:stackflow-fade}
 @keyframes stackflow-enter{from{transform:translateX(100%)}to{transform:translateX(0)}}
 @keyframes stackflow-retreat{from{transform:translateX(0)}to{transform:translateX(-25%)}}
 @keyframes stackflow-leave{from{transform:translateX(0)}to{transform:translateX(100%)}}
 @keyframes stackflow-return{from{transform:translateX(-25%)}to{transform:translateX(0)}}
-@keyframes stackflow-fade{to{opacity:0}}
 @media(prefers-reduced-motion:reduce){::view-transition-group(stackflow-next-content),::view-transition-old(stackflow-next-content),::view-transition-new(stackflow-next-content){animation:none!important}}
 
 .stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:hidden}.stackflow-next-header,.stackflow-next-footer,.stackflow-next-persistent{flex:none}

@@ -29,6 +29,8 @@ export class NavigationEngine {
   private expected: string | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private transition: Transition | null = null;
+  private transitionBounds: DOMRect | undefined;
+  private stopWatchingBounds: (() => void) | undefined;
   private disconnected = false;
   private cleanup: (() => void) | null = null;
   private swipeBackEnabled = false;
@@ -105,7 +107,7 @@ export class NavigationEngine {
     this.win.addEventListener('popstate', pop);
     this.rebuild();
     this.cleanup = () => {
-      this.disconnected = true; this.release(); this.transition?.skipTransition();
+      this.disconnected = true; this.release(); this.transition?.skipTransition(); this.clearTransitionBounds();
       if (history.pushState === wrappedPush) history.pushState = push;
       if (history.replaceState === wrappedReplace) history.replaceState = replace;
       history.scrollRestoration = oldRestoration;
@@ -132,8 +134,24 @@ export class NavigationEngine {
     this.stack = aggregate(events, Date.now()); this.emit();
   }
   private release() { clearTimeout(this.timeout); this.finish?.(); this.finish = null; this.expected = null; delete this.win.document.documentElement.dataset.stackflowPending; }
+  private clearTransitionBounds() {
+    this.stopWatchingBounds?.();
+    this.stopWatchingBounds = undefined;
+    this.transitionBounds = undefined;
+  }
+  private checkTransitionBounds = () => {
+    const before = this.transitionBounds;
+    if (!before || !this.transition) return;
+    const after = this.viewport()?.getBoundingClientRect();
+    // Skip the slide if the slots reflow or the page scrolls while it is running.
+    if (!after || Math.abs(before.top - after.top) > .5 || Math.abs(before.bottom - after.bottom) > .5) {
+      this.clearTransitionBounds();
+      this.transition.skipTransition();
+    }
+  };
   begin(direction: Direction, href: string | null, action: () => void) {
     this.release(); this.transition?.skipTransition(); this.transition = null;
+    this.clearTransitionBounds();
     const { dataset } = this.win.document.documentElement;
     delete dataset.stackflowAnimating;
     this.direction = direction; this.expected = href;
@@ -158,13 +176,27 @@ export class NavigationEngine {
       try { action(); } catch (error) { rejectPending(error); this.release(); }
       return pending;
     };
-    if (doc.startViewTransition && !reduced && this.options.animation !== 'none') {
+    if (direction !== 'replace' && doc.startViewTransition && !reduced && this.options.animation !== 'none') {
+      const viewport = this.viewport();
+      this.transitionBounds = viewport?.getBoundingClientRect();
       dataset.stackflowAnimating = 'true';
       try {
         const transition = doc.startViewTransition(run); this.transition = transition;
+        if (viewport) {
+          const Observer = doc.defaultView?.ResizeObserver;
+          const observer = Observer ? new Observer(this.checkTransitionBounds) : undefined;
+          observer?.observe(viewport);
+          const frame = viewport.parentElement?.parentElement;
+          if (frame) for (const slot of frame.children) observer?.observe(slot);
+          this.win.addEventListener('scroll', this.checkTransitionBounds, { passive: true });
+          this.stopWatchingBounds = () => {
+            observer?.disconnect();
+            this.win.removeEventListener('scroll', this.checkTransitionBounds);
+          };
+        }
         transition.ready.catch(()=>{});
-        transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; delete dataset.stackflowAnimating; } });
-      } catch { delete dataset.stackflowAnimating; void run().catch(()=>{}); }
+        transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); delete dataset.stackflowAnimating; } });
+      } catch { this.clearTransitionBounds(); delete dataset.stackflowAnimating; void run().catch(()=>{}); }
     } else { void run().catch(()=>{}); }
   }
   navigate(direction: Direction, href: string | null, action: () => void) {
@@ -183,6 +215,7 @@ export class NavigationEngine {
     const meta = metadata(this.win.history.state);
     if (meta) this.current = this.remember(meta,this.url());
     this.restoreScroll();
+    this.checkTransitionBounds();
     this.rebuild(); this.release();
   }
   read<T>(key: string, fallback: T): T { return this.current?.values.has(key) ? this.current.values.get(key) as T : fallback; }
