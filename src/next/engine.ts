@@ -134,6 +134,8 @@ export class NavigationEngine {
   private release() { clearTimeout(this.timeout); this.finish?.(); this.finish = null; this.expected = null; delete this.win.document.documentElement.dataset.stackflowPending; }
   begin(direction: Direction, href: string | null, action: () => void) {
     this.release(); this.transition?.skipTransition(); this.transition = null;
+    const { dataset } = this.win.document.documentElement;
+    delete dataset.stackflowAnimating;
     this.direction = direction; this.expected = href;
     this.win.document.documentElement.dataset.stackflowPending = 'true';
     this.win.document.documentElement.dataset.stackflowDirection = direction;
@@ -157,12 +159,12 @@ export class NavigationEngine {
       return pending;
     };
     if (doc.startViewTransition && !reduced && this.options.animation !== 'none') {
+      dataset.stackflowAnimating = 'true';
       try {
         const transition = doc.startViewTransition(run); this.transition = transition;
-        this.win.document.documentElement.dataset.stackflowAnimating = 'true';
         transition.ready.catch(()=>{});
-        transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; delete this.win.document.documentElement.dataset.stackflowAnimating; } });
-      } catch { void run().catch(()=>{}); }
+        transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; delete dataset.stackflowAnimating; } });
+      } catch { delete dataset.stackflowAnimating; void run().catch(()=>{}); }
     } else { void run().catch(()=>{}); }
   }
   navigate(direction: Direction, href: string | null, action: () => void) {
