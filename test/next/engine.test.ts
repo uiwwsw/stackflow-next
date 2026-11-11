@@ -14,3 +14,35 @@ test('stale wrappers left beneath framework patches delegate without tagging twi
 test('browser forward branch is discarded by a new push; null state is retained',()=>{const {engine,window}=setup(8);engine.write('nullable',null);assert.equal(engine.read('nullable','fallback'),null);window.history.pushState({},'','/b');engine.commit('/b');window.history.pushState({},'','/c');engine.commit('/c');const entry=[...engine.entries.values()].find(e=>e.url==='/b')!;Object.getPrototypeOf(window.history).replaceState.call(window.history,{[HISTORY_KEY]:{id:entry.id,position:entry.position}},'','/b');window.dispatchEvent(new window.PopStateEvent('popstate'));engine.commit('/b');window.history.pushState({},'','/d');engine.commit('/d');assert.equal([...engine.entries.values()].some(e=>e.url==='/c'),false);engine.dispose();});
 test('cancelled snapshot callback cannot execute an obsolete navigation',async()=>{const {engine,window}=setup();const callbacks:Array<()=>Promise<void>>=[];(window.document as any).startViewTransition=(callback:any)=>{callbacks.push(callback);return {ready:Promise.resolve(),finished:Promise.resolve(),skipTransition(){}};};engine.options.animation='ios';let route='';engine.navigate('push','/a',()=>{route='a';});engine.navigate('push','/b',()=>{route='b';});await callbacks[0]();assert.equal(route,'');const pending=callbacks[1]();assert.equal(route,'b');engine.dispose();await pending;});
 test('a pop route committing before the browser snapshot callback never waits for timeout',async()=>{const {engine,window}=setup();let callback:(()=>Promise<void>)|undefined;(window.document as any).startViewTransition=(fn:any)=>{callback=fn;return {ready:Promise.resolve(),finished:Promise.resolve(),skipTransition(){}};};engine.options.animation='ios';engine.begin('pop','/',()=>{});engine.commit('/');await Promise.race([callback!(),new Promise((_,reject)=>setTimeout(()=>reject(Error('snapshot completion gate registered too late')),10))]);engine.dispose();});
+
+test('a route commit accepts equivalent URL and search parameter encodings', () => {
+  const { engine, window } = setup();
+  try {
+    const destination = '/search?q=New%20York&empty';
+    engine.navigate('push', destination, () => window.history.pushState({}, '', destination));
+    assert.equal(window.document.documentElement.dataset.stackflowPending, 'true');
+
+    // Next's useSearchParams().toString() serializes spaces as + and empty values with =.
+    engine.commit('/search?q=New+York&empty=');
+
+    assert.equal(window.document.documentElement.dataset.stackflowPending, undefined);
+    assert.equal(engine.stack?.activities.find(activity => activity.isTop)?.params.url, destination);
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('navigation without swipe back does not clone the previous screen', () => {
+  const { engine, window, el } = setup();
+  try {
+    let clones = 0;
+    const cloneNode = el.cloneNode.bind(el);
+    el.cloneNode = deep => { clones++; return cloneNode(deep); };
+    engine.navigate('push', '/detail', () => window.history.pushState({}, '', '/detail'));
+    engine.commit('/detail');
+    assert.equal(clones, 0);
+    assert.equal(engine.previousVisual(), undefined);
+  } finally {
+    engine.dispose();
+  }
+});

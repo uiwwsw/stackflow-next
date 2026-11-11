@@ -10,6 +10,11 @@ export function safeHref(href: string, base: string) {
   if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol)) throw new TypeError('Only same-origin HTTP(S) navigation is supported');
   return url.pathname + url.search + url.hash;
 }
+function routeKey(url: URL | Location) {
+  const query = new URLSearchParams(url.search).toString();
+  return query ? `${url.pathname}?${query}` : url.pathname;
+}
+
 function metadata(value: unknown): { id: string; position: number } | null {
   const item = (value as Record<string, any> | null)?.[HISTORY_KEY];
   return item && typeof item.id === 'string' && Number.isSafeInteger(item.position) ? item : null;
@@ -26,10 +31,16 @@ export class NavigationEngine {
   private transition: Transition | null = null;
   private disconnected = false;
   private cleanup: (() => void) | null = null;
+  private swipeBackEnabled = false;
   direction: Direction = 'replace';
   skipNextPopAnimation = false;
+  setSwipeBackEnabled(enabled: boolean) {
+    this.swipeBackEnabled = enabled;
+    if (!enabled) for (const entry of this.entries.values()) delete entry.visual;
+  }
   previousVisual() { return [...this.entries.values()].find(e=>e.position===(this.current?.position??0)-1)?.visual; }
   private saveVisual() {
+    if (!this.swipeBackEnabled) return;
     const el=this.viewport();if(!this.current||!el)return;
     this.current.visual=el.cloneNode(true) as HTMLElement;this.current.visual.dataset.stackflowScroll=String(el.scrollTop);
     const others=[...this.entries.values()].filter(e=>e!==this.current&&e.visual);
@@ -158,10 +169,10 @@ export class NavigationEngine {
   }
   commit(route: string) {
     if (this.disconnected) return;
-    const actual = this.win.location.pathname + this.win.location.search;
+    const actual = routeKey(this.win.location);
     // Ignore layout effects belonging to the outgoing route.
     if (route !== actual) return;
-    if (this.expected && new URL(this.expected,this.win.location.href).pathname + new URL(this.expected,this.win.location.href).search !== route) return;
+    if (this.expected && routeKey(new URL(this.expected, this.win.location.href)) !== route) return;
     const meta = metadata(this.win.history.state);
     if (meta) this.current = this.remember(meta,this.url());
     if (this.options.preserveScroll && this.viewport()) this.viewport()!.scrollTop = this.current?.scroll ?? 0;

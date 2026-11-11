@@ -13,12 +13,13 @@ Install the current prerelease from npm.
 npm install @uiwwsw/stackflow-next@next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.2`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.2)
+The `next` tag currently points to `0.2.0-alpha.3`. See the
+[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.3)
 and [live demo](https://stackflow-next.vercel.app/).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
-to `withStackflow` if you already have one.
+to `withStackflow` if you already have one. The integration needs no
+environment variable or `experimental.viewTransition` flag.
 
 ```js
 // next.config.mjs

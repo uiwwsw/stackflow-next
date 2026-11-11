@@ -38,8 +38,10 @@ export function StackflowProvider({children,header,footer,animation='ios',preser
     const disconnect=value.connect(); setEngine(value);
     return ()=>{ disconnect(); value.dispose(); };
   },[animation,preserveScroll,maxEntries,navigationTimeout]);
-  useEffect(()=>{
-    if(!swipeBack||!viewport.current||!engine)return;
+  useLayoutEffect(()=>{
+    if(!engine)return;
+    engine.setSwipeBackEnabled(swipeBack);
+    if(!swipeBack||!viewport.current)return;
     return attachSwipeBack(engine,viewport.current,()=>router.back());
   },[swipeBack,engine,router]);
   return <Context.Provider value={engine}>
