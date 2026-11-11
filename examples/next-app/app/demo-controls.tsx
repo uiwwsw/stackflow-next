@@ -18,6 +18,7 @@ export function DemoHeader() {
 export function DemoFooter(){const router=useStackRouter();const stack=useStack();return <div className="demo-footer"><button onClick={()=>router.back()}>Back</button><span data-testid="stack-depth">스택 {stack?.activities.length??0}</span><button className="primary" onClick={()=>router.forward()}>Forward</button></div>;}
 const modalRoutes = ['/slow', '/skeleton'];
 const skeletonRoutes = ['/skeleton'];
+const transitionRoutes = [{href: '/detail?panel=map', animation: 'modal'}] as const;
 const subscribeToHydration = () => () => {};
 const hydrated = () => true;
 const notHydrated = () => false;
@@ -46,7 +47,7 @@ export function DemoFrame({children}: {children: ReactNode}) {
   const ready = useSyncExternalStore(subscribeToHydration, hydrated, notHydrated);
   return <>
     <div className="demo-frame" inert={!ready} data-demo-ready={ready ? '' : undefined}>
-      <StackflowProvider swipeBack modalRoutes={modalRoutes} skeletonRoutes={skeletonRoutes}
+      <StackflowProvider swipeBack modalRoutes={modalRoutes} skeletonRoutes={skeletonRoutes} transitionRoutes={transitionRoutes}
         header={<DemoHeader />} footer={<DemoFooter />} fixedTargets="[data-demo-fixed]" scrollTarget="[data-demo-scroll]">
         <div className="demo-page-shell">
           <div data-demo-scroll className="demo-scroll-body">{children}</div>

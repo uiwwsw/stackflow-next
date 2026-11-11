@@ -32,6 +32,128 @@ test('a route commit accepts equivalent URL and search parameter encodings', () 
   }
 });
 
+test('a canonical trailing slash does not interrupt the destination transition', async () => {
+  const { engine, window } = setup();
+  let update: (() => Promise<void>) | undefined;
+  let skipped = false;
+  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() { skipped = true; } };
+  };
+  engine.options.animation = 'ios';
+  try {
+    engine.navigate('push', '/detail?q=1', () => window.history.pushState({}, '', '/detail/?q=1'));
+    const pending = update!();
+    engine.commit('/detail/?q=1');
+    assert.equal(engine.isPending(), false);
+    assert.equal(skipped, false);
+    await pending;
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('a redirected navigation settles and reflects the committed destination', async () => {
+  const { engine, window } = setup();
+  let update: (() => Promise<void>) | undefined;
+  let skipped = false;
+  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() { skipped = true; } };
+  };
+  engine.options.animation = 'ios';
+  try {
+    engine.navigate('push', '/account', () => window.history.pushState({}, '', '/login?returnTo=%2Faccount'));
+    const pending = update!();
+    engine.commit('/login?returnTo=%2Faccount');
+    assert.equal(engine.isPending(), false);
+    assert.equal(skipped, true);
+    assert.equal(engine.stack?.activities.find(activity => activity.isTop)?.params.url, '/login?returnTo=%2Faccount');
+    await pending;
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('a route that commits before the new navigation action leaves the new transition pending', async () => {
+  const { engine, window } = setup();
+  let update: (() => Promise<void>) | undefined;
+  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  engine.options.animation = 'ios';
+  try {
+    engine.navigate('push', '/latest', () => window.history.pushState({}, '', '/latest'));
+    window.history.pushState({}, '', '/earlier');
+    engine.commit('/earlier');
+    assert.equal(engine.isPending(), true);
+    const pending = update!();
+    engine.commit('/latest');
+    assert.equal(engine.isPending(), false);
+    await pending;
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('query motion survives a base path, browser history traversal and modal close by replace', async () => {
+  const win = new Window({ url: 'http://localhost/app/detail?city=seoul' });
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 8,
+  }, () => null, () => [], () => [], () => [], () => [
+    { href: '/detail?panel=map', animation: 'modal' },
+    { href: '/detail?panel=quiet', animation: 'none' },
+    { href: '/detail?panel=info', animation: 'ios' },
+  ]);
+  const motion: (string | undefined)[] = [];
+  let update: (() => Promise<void>) | undefined;
+  (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    const {stackflowDirection, stackflowModal} = win.document.documentElement.dataset;
+    motion.push(stackflowModal ?? stackflowDirection);
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  win.history.replaceState({ __NA: true }, '');
+  engine.connect();
+  try {
+    engine.commit('/detail?city=seoul');
+    const detail = win.history.state;
+    const map = '/detail?city=seoul&panel=map';
+    engine.navigate('push', map, () => win.history.pushState({ __NA: true }, '', '/app' + map));
+    let pending = update!();
+    engine.commit(map);
+    await pending;
+    const mapState = win.history.state;
+
+    const replace = Object.getPrototypeOf(win.history).replaceState;
+    for (const [path, state] of [['/detail?city=seoul', detail], [map, mapState]] as const) {
+      replace.call(win.history, state, '', '/app' + path);
+      win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
+      pending = update!();
+      engine.commit(path);
+      await pending;
+    }
+
+    engine.navigate('replace', '/detail?city=seoul', () => win.history.replaceState({ __NA: true }, '', '/app/detail?city=seoul'));
+    pending = update!();
+    engine.commit('/detail?city=seoul');
+    await pending;
+
+    engine.navigate('replace', '/detail?panel=info', () => win.history.replaceState({ __NA: true }, '', '/app/detail?panel=info'));
+    pending = update!();
+    engine.commit('/detail?panel=info');
+    await pending;
+
+    engine.navigate('push', '/detail?panel=quiet', () => win.history.pushState({ __NA: true }, '', '/app/detail?panel=quiet'));
+    engine.commit('/detail?panel=quiet');
+    assert.equal(engine.isPending(), false);
+    assert.deepEqual(motion, ['enter', 'exit', 'enter', 'exit', 'push']);
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('opening or reloading a page does not animate; in-app push, Back and Forward do', async () => {
   const win = new Window({ url: 'http://localhost/detail' });
   const directions: (string | undefined)[] = [];
@@ -239,7 +361,7 @@ test('modal routes rise on push and Forward and descend on Back', async () => {
     const opened = update!();
     engine.commit('/compose?draft=1');
     await opened;
-    assert.equal(engine.hasModalBackTransition(), true);
+    assert.equal(engine.usesNonInteractiveBack(), true);
     const modal = win.history.state;
     const replace = Object.getPrototypeOf(win.history).replaceState;
     for (const [path, state] of [['/', home], ['/compose?draft=1', modal]] as const) {

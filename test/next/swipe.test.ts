@@ -23,6 +23,28 @@ test('an edge press does not mount the previous screen before horizontal intent'
   }
 });
 
+test('an unhandled swipe restores inline styles and does not suppress the next Back', async () => {
+  const { engine, el, parent, pointer, detach, backs } = setup();
+  engine.options.timeout = 10;
+  el.style.transform = 'scale(1)';
+  el.style.position = 'absolute';
+  try {
+    pointer('pointerdown', 2);
+    pointer('pointermove', 200);
+    pointer('pointerup', 200);
+    assert.equal(backs(), 1);
+    assert.equal(engine.skipNextPopAnimation, true);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(engine.skipNextPopAnimation, false);
+    assert.equal(parent.children.length, 1);
+    assert.equal(el.style.transform, 'scale(1)');
+    assert.equal(el.style.position, 'absolute');
+  } finally {
+    detach();
+    engine.dispose();
+  }
+});
+
 test('edge swipe with fixed targets navigates on release without moving the live DOM', () => {
   const { engine, el, parent, pointer, detach, backs } = setup();
   engine.hasFixedTargets = () => true;

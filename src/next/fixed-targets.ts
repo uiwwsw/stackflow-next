@@ -2,7 +2,7 @@ const marker = 'data-stackflow-fixed-target';
 
 export type FixedTarget = string | {
   selector: string;
-  /** Exact pathnames on either side of a transition where this element should slide. */
+  /** Routes on either side of a transition where this element should slide. */
   exceptRoutes: readonly string[];
 };
 
@@ -10,16 +10,32 @@ export function routePathname(url: string) {
   return url.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
 }
 
+export function matchesRoute(rule: string, href: string) {
+  if (routePathname(rule) !== routePathname(href)) return false;
+  if (!rule.includes('?')) return true;
+  const query = (url: string) => {
+    const withoutHash = url.split('#', 1)[0];
+    const start = withoutHash.indexOf('?');
+    return new URLSearchParams(start < 0 ? '' : withoutHash.slice(start + 1));
+  };
+  const required = query(rule);
+  if (required.size === 0) return true;
+  const actual = query(href);
+  const remaining = new Map<string, string[]>();
+  for (const [key, value] of required) {
+    const values = remaining.get(key) ?? actual.getAll(key);
+    const index = values.indexOf(value);
+    if (index < 0) return false;
+    values.splice(index, 1);
+    remaining.set(key, values);
+  }
+  return true;
+}
+
 export function resolveFixedSelectors(targets: readonly FixedTarget[], from: string, to: string) {
-  const pathname = routePathname;
-  const source = pathname(from);
-  const destination = pathname(to);
   return targets.flatMap(target => {
     if (typeof target === 'string') return [target];
-    const excluded = target.exceptRoutes.some(route => {
-      const path = pathname(route);
-      return path === source || path === destination;
-    });
+    const excluded = target.exceptRoutes.some(route => matchesRoute(route, from) || matchesRoute(route, to));
     return excluded ? [] : [target.selector];
   });
 }

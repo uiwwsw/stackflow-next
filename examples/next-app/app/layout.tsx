@@ -15,6 +15,7 @@ import '@uiwwsw/stackflow-next/style.css';
   fixedTargets="[data-demo-fixed]"
   scrollTarget="[data-demo-scroll]"
   skeletonRoutes={['/skeleton']}
+  transitionRoutes={[{ href: '/detail?panel=map', animation: 'modal' }]}
 >
   {children}
 </StackflowProvider>`;

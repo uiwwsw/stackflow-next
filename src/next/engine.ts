@@ -1,9 +1,10 @@
 import { aggregate, makeEvent, type DomainEvent, type Stack } from '@stackflow/core';
-import { findFixedTargets, pinForTransition, resolveFixedSelectors, routePathname, type FixedTarget } from './fixed-targets.js';
+import { findFixedTargets, matchesRoute, pinForTransition, resolveFixedSelectors, routePathname, type FixedTarget } from './fixed-targets.js';
 
 export const HISTORY_KEY = '__stackflow_next_v1';
 export type Entry = { id: string; position: number; url: string; scroll: number; values: Map<string, unknown>; visual?: HTMLElement };
 export type Direction = 'push' | 'pop' | 'replace';
+export type RouteTransition = { href: string; animation: 'ios' | 'modal' | 'none' };
 type Transition = { finished: Promise<void>; ready: Promise<void>; skipTransition(): void };
 type TransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => Transition };
 type NavigationWindow = Window & { navigation?: { currentEntry?: { index: number } | null } };
@@ -13,8 +14,9 @@ export function safeHref(href: string, base: string) {
   return url.pathname + url.search + url.hash;
 }
 function routeKey(url: URL | Location) {
+  const pathname = routePathname(url.pathname);
   const query = new URLSearchParams(url.search).toString();
-  return query ? `${url.pathname}?${query}` : url.pathname;
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 function metadata(value: unknown): { id: string; position: number } | null {
@@ -31,7 +33,8 @@ export class NavigationEngine {
   private loadingObserver: MutationObserver | null = null;
   private waitForDestination = false;
   private historyIndex: number | undefined;
-  private expected: string | null = null;
+  private basePath: string | undefined;
+  private navigation: { expected: string | null; source: string; started: boolean } | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private transition: Transition | null = null;
   private transitionBounds: DOMRect | undefined;
@@ -55,18 +58,23 @@ export class NavigationEngine {
   }
   hasPreviousEntry() { return this.previousEntry() !== undefined; }
   previousVisual() { return this.previousEntry()?.visual; }
-  private modalMotion(from: string, to: string) {
-    const source = routePathname(from);
-    const destination = routePathname(to);
-    const routes = this.modalRoutes().map(routePathname);
-    const wasModal = routes.includes(source);
-    const isModal = routes.includes(destination);
-    if (wasModal === isModal) return undefined;
-    return isModal ? 'enter' : 'exit';
+  private routeAnimation(href: string) {
+    const rule = this.transitionRoutes().find(rule => matchesRoute(rule.href, href));
+    return rule?.animation ?? (this.modalRoutes().some(route => matchesRoute(route, href)) ? 'modal' : undefined);
   }
-  hasModalBackTransition() {
+  private motion(from: string, to: string) {
+    const source = this.routeAnimation(this.appHref(from));
+    const destination = this.routeAnimation(this.appHref(to));
+    const disabled = source === 'none' || destination === 'none';
+    const modal = source === 'modal' && destination !== 'modal' ? 'exit'
+      : destination === 'modal' && source !== 'modal' ? 'enter' : undefined;
+    return { disabled, modal, animateReplace: !!modal || source === 'ios' || destination === 'ios' };
+  }
+  usesNonInteractiveBack() {
     const previous = this.previousEntry();
-    return previous !== undefined && this.modalMotion(this.current?.url ?? this.url(), previous.url) !== undefined;
+    if (!previous) return false;
+    const { disabled, modal } = this.motion(this.current?.url ?? this.url(), previous.url);
+    return disabled || !!modal;
   }
   private saveVisual() {
     if (!this.swipeBackEnabled || this.hasFixedTargets()) return;
@@ -81,7 +89,8 @@ export class NavigationEngine {
     private readonly scrollElement = viewport,
     private readonly fixedTargets: () => readonly FixedTarget[] = () => [],
     private readonly modalRoutes: () => readonly string[] = () => [],
-    private readonly skeletonRoutes: () => readonly string[] = () => []) {}
+    private readonly skeletonRoutes: () => readonly string[] = () => [],
+    private readonly transitionRoutes: () => readonly RouteTransition[] = () => []) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   isPending = () => this.finish !== null;
   private emit() { this.listeners.forEach(fn => fn()); }
@@ -99,6 +108,22 @@ export class NavigationEngine {
   }
   private fresh(position: number) { return {id: this.win.crypto.randomUUID(), position}; }
   private url() { return this.win.location.pathname + this.win.location.search + this.win.location.hash; }
+  private appHref(href: string) {
+    if (!this.basePath) return href;
+    const url = new URL(href, this.win.location.origin);
+    const path = url.pathname;
+    if (path !== this.basePath && !path.startsWith(this.basePath + '/')) return href;
+    return (path.slice(this.basePath.length) || '/') + url.search + url.hash;
+  }
+  resolveHref(href: string) {
+    const origin = this.win.location.origin;
+    const resolved = safeHref(href, origin + this.appHref(this.url()));
+    return href.startsWith('//') || URL.canParse(href) ? this.appHref(resolved) : resolved;
+  }
+  isCurrentRoute(href: string) {
+    const origin = this.win.location.origin;
+    return routeKey(new URL(this.resolveHref(href), origin)) === routeKey(new URL(this.appHref(this.url()), origin));
+  }
   private readHistoryIndex() {
     const index = (this.win as NavigationWindow).navigation?.currentEntry?.index;
     return index !== undefined && index >= 0 ? index : undefined;
@@ -170,7 +195,7 @@ export class NavigationEngine {
         }
         return;
       }
-      if (state?.__NA === true && engine.canAnimate()) {
+      if (state?.__NA === true && engine.canAnimate() && !engine.motion(from, destination).disabled) {
         // Next can commit before the browser captures the outgoing screen. Deliver
         // its history event inside the snapshot callback so capture comes first.
         event.stopImmediatePropagation();
@@ -220,7 +245,7 @@ export class NavigationEngine {
     this.loadingObserver = null;
     const finish = this.finish;
     this.finish = null;
-    this.expected = null;
+    this.navigation = null;
     delete this.win.document.documentElement.dataset.stackflowPending;
     finish?.();
     if (finish) this.emit();
@@ -285,12 +310,19 @@ export class NavigationEngine {
   begin(direction: Direction, href: string | null, action: () => void, from = this.current?.url ?? this.url()) {
     this.cancelTransition();
     const { dataset } = this.win.document.documentElement;
-    const modal = this.modalMotion(from, href ?? this.url());
-    this.direction = direction; this.expected = href;
-    const destination = routePathname(href ?? this.url());
-    this.waitForDestination = !!this.options.waitForPage && !this.skeletonRoutes().some(route => routePathname(route) === destination);
+    const destination = href ?? this.url();
+    const { disabled, modal, animateReplace } = this.motion(from, destination);
+    this.direction = direction;
+    const origin = this.win.location.origin;
+    const navigation = {
+      expected: href ? routeKey(new URL(href, origin)) : null,
+      source: routeKey(new URL(from, origin)),
+      started: false,
+    };
+    this.navigation = navigation;
+    this.waitForDestination = !!this.options.waitForPage && !this.skeletonRoutes().some(route => matchesRoute(route, this.appHref(destination)));
     dataset.stackflowPending = 'true';
-    dataset.stackflowDirection = direction;
+    dataset.stackflowDirection = direction === 'replace' && animateReplace ? 'push' : direction;
     const doc = this.win.document as TransitionDocument;
     const generation = this.generation;
     let rejectPending: (error: unknown) => void = () => {};
@@ -305,6 +337,7 @@ export class NavigationEngine {
     const run = () => {
       if (called || this.disconnected || generation !== this.generation) return Promise.resolve();
       called = true;
+      navigation.started = true;
       try { action(); } catch (error) { rejectPending(error); this.release(); }
       return pending;
     };
@@ -315,19 +348,17 @@ export class NavigationEngine {
       this.transition?.skipTransition();
     }, this.options.timeout);
     this.emit();
-    if ((direction !== 'replace' || modal) && this.canAnimate()) {
+    if (!disabled && (direction !== 'replace' || animateReplace) && this.canAnimate()) {
       const viewport = this.viewport();
-      const selectors = modal ? [] : resolveFixedSelectors(this.fixedTargets(), from, href ?? this.url());
+      const selectors = modal ? [] : resolveFixedSelectors(this.fixedTargets(), this.appHref(from), this.appHref(destination));
       if (viewport && selectors.length) {
         const targets = findFixedTargets(viewport, selectors);
         const css = doc.defaultView?.CSS;
-        if (targets.size && (!css?.supports('view-transition-name', 'match-element') || !css.supports('selector(::view-transition-group(.stackflow-fixed))'))) {
-          void run().catch(()=>{});
-          return;
+        if (targets.size && css?.supports('view-transition-name', 'match-element') && css.supports('selector(::view-transition-group(.stackflow-fixed))')) {
+          const pins = pinForTransition(viewport, targets);
+          if (!pins) { void run().catch(()=>{}); return; }
+          this.pins = { ...pins, selectors };
         }
-        const pins = pinForTransition(viewport, targets);
-        if (!pins) { void run().catch(()=>{}); return; }
-        this.pins = { ...pins, selectors };
       }
       this.transitionBounds = viewport?.getBoundingClientRect();
       if (modal) dataset.stackflowModal = modal;
@@ -355,19 +386,35 @@ export class NavigationEngine {
   navigate(direction: Direction, href: string | null, action: () => void) {
     // Traversals are animated once, by the popstate observer.
     if (href === null) { action(); return; }
-    const destination = safeHref(href, this.win.location.href);
+    const destination = (this.basePath ?? '') + this.resolveHref(href);
     if (routeKey(new URL(destination, this.win.location.origin)) === routeKey(this.win.location)) { action(); return; }
     this.capture(); this.saveVisual(); this.begin(direction, destination, action);
   }
   commit(route: string) {
     if (this.disconnected) return;
+    const origin = this.win.location.origin;
+    const observed = new URL(route, origin);
+    if (this.basePath === undefined && !this.navigation) {
+      const path = routePathname(this.win.location.pathname);
+      const appPath = routePathname(observed.pathname);
+      if (appPath === '/') this.basePath = path === '/' ? '' : path;
+      else if (path.endsWith(appPath)) this.basePath = path.slice(0, -appPath.length);
+    }
     const actual = routeKey(this.win.location);
     // Ignore layout effects belonging to the outgoing route.
-    if (route !== actual) return;
-    if (this.expected && routeKey(new URL(this.expected, this.win.location.href)) !== route) return;
+    if (routeKey(observed) !== routeKey(new URL(this.appHref(this.url()), origin))) return;
+    const navigation = this.navigation;
+    const redirected = navigation?.expected != null && navigation.expected !== actual;
+    if (redirected && (!navigation.started || navigation.source === actual)) return;
     const meta = metadata(this.win.history.state);
     if (meta) this.current = this.remember(meta,this.url());
     this.restoreScroll();
+    if (redirected) {
+      // Modal and fixed-target rules were selected for a different destination.
+      this.cancelTransition();
+      this.rebuild();
+      return;
+    }
     this.checkTransitionBounds();
     this.rebuild(); this.finishWhenPageIsReady();
   }
