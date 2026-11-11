@@ -8,10 +8,10 @@ export function DemoHeader() {
   return <div className="demo-header">
     <StackLink className="demo-brand" href="/">Stackflow Next</StackLink>
     <nav aria-label="데모 페이지">
-      <StackLink href="/" aria-current={path === '/' ? 'page' : undefined}>목록</StackLink>
-      <StackLink href="/detail?city=seoul" aria-current={path === '/detail' ? 'page' : undefined}>상세</StackLink>
-      <StackLink href="/slow" prefetch={false} aria-current={path === '/slow' ? 'page' : undefined}>5.5초 대기</StackLink>
-      <StackLink href="/skeleton" aria-current={path === '/skeleton' ? 'page' : undefined}>스켈레톤</StackLink>
+      <StackLink href="/demo" aria-current={path === '/demo' ? 'page' : undefined}>목록</StackLink>
+      <StackLink href="/demo/detail?city=seoul" aria-current={path === '/demo/detail' ? 'page' : undefined}>상세</StackLink>
+      <StackLink href="/demo/slow" prefetch={false} aria-current={path === '/demo/slow' ? 'page' : undefined}>5.5초 대기</StackLink>
+      <StackLink href="/demo/skeleton" aria-current={path === '/demo/skeleton' ? 'page' : undefined}>스켈레톤</StackLink>
     </nav>
   </div>;
 }
@@ -31,7 +31,7 @@ export function DemoFooter() {
     <a href="https://github.com/uiwwsw/stackflow-next">GitHub</a>
   </div>;
 }
-const modalRoutes = ['/slow', '/skeleton'];
+const modalRoutes = ['/demo/slow', '/demo/skeleton'];
 const subscribeToHydration = () => () => {};
 const hydrated = () => true;
 const notHydrated = () => false;
@@ -69,7 +69,7 @@ export function DemoFrame({children, skeletonRoutes}: {children: ReactNode; skel
       </StackflowProvider>
   </div>;
 }
-export function ReplaceHome(){const router=useStackRouter();return <button className="secondary" onClick={()=>router.replace('/')}>목록으로 교체 · replace</button>;}
+export function ReplaceHome(){const router=useStackRouter();return <button className="secondary" onClick={()=>router.replace('/demo')}>목록으로 교체 · replace</button>;}
 
 export function MapPanel({title}: {title: string}) {
   const [open, setOpen] = useState(false);

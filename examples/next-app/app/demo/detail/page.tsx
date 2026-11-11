@@ -15,8 +15,8 @@ async function Detail({searchParams}: DetailProps) {
     <h2>{title}에서의 하루</h2>
     <DraftForm />
     <MapPanel title={title} />
-    <p className="helper">Back으로 돌아가 목록의 메모와 스크롤을 확인하세요.</p>
-    <StackLink className="stream-link" href="/slow" prefetch={false}>스트리밍 화면 열기</StackLink>
+    <p className="helper">브라우저에서 뒤로가기를 눌러 목록의 메모와 스크롤 위치를 확인하세요.</p>
+    <StackLink className="stream-link" href="/demo/slow" prefetch={false}>스트리밍 화면 열기</StackLink>
     <ReplaceHome />
   </article>;
 }
