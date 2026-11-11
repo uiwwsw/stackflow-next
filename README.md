@@ -13,8 +13,8 @@ Install the current prerelease from npm.
 npm install @uiwwsw/stackflow-next@next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.9`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.9)
+The `next` tag currently points to `0.2.0-alpha.10`. See the
+[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.10)
 and [live demo](https://stackflow-next.vercel.app/).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
@@ -104,6 +104,23 @@ browser cannot isolate it from the page capture, navigation skips the slide.
 With `fixedTargets` configured, an edge swipe triggers Back on release without
 dragging the live page. Existing `header`, `footer`, and `persistent` slots remain
 outside the slide automatically.
+
+To let a header slide when a route changes its content, render the header inside
+the provider body and give its selector an `exceptRoutes` list:
+
+```tsx
+<StackflowProvider fixedTargets={{ selector: '#app-header', exceptRoutes: ['/checkout'] }}>
+  <header id="app-header"><HeaderForCurrentRoute /></header>
+  {children}
+</StackflowProvider>
+```
+
+The header slides when entering or leaving `/checkout`, including Back and
+Forward. It stays still between other routes when its DOM node and bounds stay
+the same. Exceptions match exact pathnames, ignoring query strings, fragments,
+and trailing slashes. The app renders the header appropriate to the current
+route. Mix exception rules and plain selectors in an array to control each
+element independently.
 
 If you installed `0.2.0-alpha.7` and used `transitionTarget`, upgrade and remove
 that prop. Restore the bounded-height provider layout shown above under Install

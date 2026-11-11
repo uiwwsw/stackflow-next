@@ -1,5 +1,5 @@
 import { aggregate, makeEvent, type DomainEvent, type Stack } from '@stackflow/core';
-import { findFixedTargets, pinForTransition } from './fixed-targets.js';
+import { findFixedTargets, pinForTransition, resolveFixedSelectors, type FixedTarget } from './fixed-targets.js';
 
 export const HISTORY_KEY = '__stackflow_next_v1';
 export type Entry = { id: string; position: number; url: string; scroll: number; values: Map<string, unknown>; visual?: HTMLElement };
@@ -32,13 +32,15 @@ export class NavigationEngine {
   private transition: Transition | null = null;
   private transitionBounds: DOMRect | undefined;
   private stopWatchingBounds: (() => void) | undefined;
-  private pins: ReturnType<typeof pinForTransition> = null;
+  private pins: (NonNullable<ReturnType<typeof pinForTransition>> & { selectors: readonly string[] }) | null = null;
   private disconnected = false;
   private cleanup: (() => void) | null = null;
   private swipeBackEnabled = false;
   direction: Direction = 'replace';
   skipNextPopAnimation = false;
-  hasFixedTargets() { return this.fixedSelectors().some(selector => selector.trim().length > 0); }
+  hasFixedTargets() {
+    return this.fixedTargets().some(target => (typeof target === 'string' ? target : target.selector).trim().length > 0);
+  }
   setSwipeBackEnabled(enabled: boolean) {
     this.swipeBackEnabled = enabled;
     if (!enabled) for (const entry of this.entries.values()) delete entry.visual;
@@ -55,7 +57,7 @@ export class NavigationEngine {
   constructor(readonly win: Window, readonly viewport: () => HTMLElement | null,
     readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number },
     private readonly scrollElement = viewport,
-    private readonly fixedSelectors: () => readonly string[] = () => []) {}
+    private readonly fixedTargets: () => readonly FixedTarget[] = () => []) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private emit() { this.listeners.forEach(fn => fn()); }
   private remember(meta: {id: string; position: number}, url: string) {
@@ -102,6 +104,7 @@ export class NavigationEngine {
     let replayedPop: PopStateEvent | undefined;
     const pop = (event: PopStateEvent) => {
       if (event === replayedPop) return;
+      const from = engine.current?.url ?? engine.url();
       engine.capture();engine.saveVisual();
       const state = history.state;
       const known = metadata(state);
@@ -124,9 +127,9 @@ export class NavigationEngine {
           replayedPop = new PopEvent('popstate', { state });
           engine.win.dispatchEvent(replayedPop);
           replayedPop = undefined;
-        });
+        }, from);
       } else {
-        engine.begin(engine.direction, engine.url(), () => {});
+        engine.begin(engine.direction, engine.url(), () => {}, from);
       }
     };
     this.win.addEventListener('popstate', pop, true);
@@ -174,12 +177,12 @@ export class NavigationEngine {
     const after = this.viewport()?.getBoundingClientRect();
     // Skip the slide if the slots reflow or the page scrolls while it is running.
     if (!after || Math.abs(before.top - after.top) > .5 || Math.abs(before.bottom - after.bottom) > .5 ||
-      (this.pins && !this.pins.stable(findFixedTargets(this.viewport(), this.fixedSelectors())))) {
+      (this.pins && !this.pins.stable(findFixedTargets(this.viewport(), this.pins.selectors)))) {
       this.clearTransitionBounds();
       this.transition.skipTransition();
     }
   };
-  begin(direction: Direction, href: string | null, action: () => void) {
+  begin(direction: Direction, href: string | null, action: () => void, from = this.current?.url ?? this.url()) {
     this.release(); this.transition?.skipTransition(); this.transition = null;
     this.clearTransitionBounds();
     this.clearPins();
@@ -214,7 +217,7 @@ export class NavigationEngine {
     }, this.options.timeout);
     if (direction !== 'replace' && doc.startViewTransition && !reduced && this.options.animation !== 'none') {
       const viewport = this.viewport();
-      const selectors = this.fixedSelectors();
+      const selectors = resolveFixedSelectors(this.fixedTargets(), from, href ?? this.url());
       if (viewport && selectors.length) {
         const targets = findFixedTargets(viewport, selectors);
         const css = doc.defaultView?.CSS;
@@ -222,8 +225,9 @@ export class NavigationEngine {
           void run().catch(()=>{});
           return;
         }
-        this.pins = pinForTransition(viewport, targets);
-        if (!this.pins) { void run().catch(()=>{}); return; }
+        const pins = pinForTransition(viewport, targets);
+        if (!pins) { void run().catch(()=>{}); return; }
+        this.pins = { ...pins, selectors };
       }
       this.transitionBounds = viewport?.getBoundingClientRect();
       dataset.stackflowAnimating = 'true';

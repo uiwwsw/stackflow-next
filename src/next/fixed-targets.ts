@@ -1,5 +1,25 @@
 const marker = 'data-stackflow-fixed-target';
 
+export type FixedTarget = string | {
+  selector: string;
+  /** Exact pathnames on either side of a transition where this element should slide. */
+  exceptRoutes: readonly string[];
+};
+
+export function resolveFixedSelectors(targets: readonly FixedTarget[], from: string, to: string) {
+  const pathname = (url: string) => url.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
+  const source = pathname(from);
+  const destination = pathname(to);
+  return targets.flatMap(target => {
+    if (typeof target === 'string') return [target];
+    const excluded = target.exceptRoutes.some(route => {
+      const path = pathname(route);
+      return path === source || path === destination;
+    });
+    return excluded ? [] : [target.selector];
+  });
+}
+
 export function findFixedTargets(content: HTMLElement | null, selectors: readonly string[]) {
   const targets = new Set<HTMLElement>();
   if (!content || !selectors.length) return targets;

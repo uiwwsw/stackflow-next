@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { NavigationEngine, safeHref } from './engine.js';
 import { attachSwipeBack } from './swipe.js';
 import { attachScrollViewport } from './scroll.js';
+import type { FixedTarget } from './fixed-targets.js';
+export type { FixedTarget } from './fixed-targets.js';
 
 const Context = createContext<NavigationEngine | null | undefined>(undefined);
 function useEngine() { const engine=useContext(Context); if(engine===undefined) throw new Error('Wrap your layout in StackflowProvider'); return engine; }
@@ -27,7 +29,7 @@ export interface StackflowProviderProps {
   /** CSS selector for a single visible scroll region inside the provider body. */
   scrollTarget?: string;
   /** CSS selectors for shared elements inside the page that should not slide. */
-  fixedTargets?: string | readonly string[];
+  fixedTargets?: FixedTarget | readonly FixedTarget[];
   /** @deprecated Remove this prop. The full page is always the transition surface. */
   transitionTarget?: string;
   swipeBack?: boolean;
@@ -38,14 +40,16 @@ export interface StackflowProviderProps {
 }
 export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
-  const fixed = useRef<readonly string[]>([]);
+  const fixed = useRef<readonly FixedTarget[]>([]);
   const indicator=useRef<HTMLDivElement>(null);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
   const engineRef=useRef<NavigationEngine | null>(null);
   const [engine,setEngine]=useState<NavigationEngine|null>(null);
   const router=useRouter();
   useLayoutEffect(() => {
-    fixed.current = typeof fixedTargets === 'string' ? [fixedTargets] : fixedTargets ?? [];
+    if (fixedTargets == null) fixed.current = [];
+    else if (typeof fixedTargets === 'string' || 'selector' in fixedTargets) fixed.current = [fixedTargets];
+    else fixed.current = fixedTargets;
   }, [fixedTargets]);
   useLayoutEffect(() => {
     if (process.env.NODE_ENV !== 'production' && transitionTarget !== undefined) {
