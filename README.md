@@ -345,8 +345,10 @@ workspace development wrapper.
 ## Localize the loading message
 
 Pass your app's locale to the provider. The built-in loading message supports
-English, Korean, Japanese, Chinese, Spanish, French, German, Portuguese, and
-Arabic. Region variants use their primary language. Other locales use English.
+English, Korean, Japanese, Simplified and Traditional Chinese, Spanish, French,
+German, Portuguese, and Arabic. Region variants use their primary language;
+Chinese regions such as `zh-TW` and `zh-HK` use Traditional Chinese. Other
+locales use English.
 
 ```tsx
 <StackflowProvider locale="ja-JP">{children}</StackflowProvider>
