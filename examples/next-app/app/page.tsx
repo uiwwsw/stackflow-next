@@ -24,7 +24,7 @@ export default function Home() {
       <div className="site-width site-nav">
         <Link className="site-wordmark" href="/">Stackflow Next</Link>
         <nav aria-label="사이트">
-          <a href="#install">설치</a>
+          <a href="https://www.npmjs.com/package/@uiwwsw/stackflow-next">npm</a>
           <Link href="/demo">데모</Link>
           <a href={repository}>GitHub</a>
         </nav>
@@ -33,28 +33,7 @@ export default function Home() {
     <main className="site-width site-main">
       <section className="site-intro">
         <h1>Stackflow Next</h1>
-        <p>Next.js App Router에서 화면을 밀어 열고, 브라우저 뒤로가기로 되돌립니다.</p>
-        <div className="site-actions">
-          <Link className="site-button site-button-primary" href="/demo">데모 열기</Link>
-          <a className="site-button" href="#install">설치 방법</a>
-        </div>
-      </section>
-      <section className="site-behavior" aria-labelledby="behavior">
-        <h2 id="behavior">화면 이동</h2>
-        <dl>
-          <div>
-            <dt>브라우저 뒤로·앞으로</dt>
-            <dd>Next.js 경로와 브라우저 방문 기록을 그대로 사용합니다. 뒤로가기는 역방향, 앞으로가기는 정방향으로 재생됩니다.</dd>
-          </div>
-          <div>
-            <dt>목록 상태 복원</dt>
-            <dd>상세에서 돌아오면 목록의 스크롤 위치가 복원됩니다. Next.js가 화면을 캐시에 유지하는 동안 입력값과 컴포넌트 상태도 남습니다.</dd>
-          </div>
-          <div>
-            <dt>느린 응답</dt>
-            <dd>다음 화면이 준비될 때까지 현재 화면을 유지합니다. 경로별로 스켈레톤을 먼저 보여주도록 설정할 수도 있습니다.</dd>
-          </div>
-        </dl>
+        <p>Next.js App Router용 페이지 전환 라이브러리입니다. 기존 URL을 유지하며 브라우저 뒤로가기와 앞으로가기에도 슬라이드를 적용합니다.</p>
       </section>
       <section className="site-install" id="install">
         <h2>설치</h2>
@@ -68,13 +47,11 @@ export default function Home() {
           <div><h3>app/layout.tsx</h3><pre><code>{layout}</code></pre></div>
         </div>
       </section>
+      <section className="site-behavior">
+        <h2>데모에서 확인하기</h2>
+        <p><Link href="/demo">데모</Link>에서 상세 페이지를 연 뒤 브라우저 뒤로가기를 누르면 슬라이드와 스크롤 복원을 확인할 수 있습니다. Next.js 캐시에 목록이 남아 있으면 입력값도 복원됩니다.</p>
+        <p>데모의 ‘5.5초 대기’는 응답을 기다린 뒤 전환합니다. ‘스켈레톤’는 로딩 화면으로 먼저 전환합니다.</p>
+      </section>
     </main>
-    <footer className="site-width site-footer">
-      <span>Stackflow Next</span>
-      <nav aria-label="프로젝트">
-        <a href="https://www.npmjs.com/package/@uiwwsw/stackflow-next">npm</a>
-        <a href={repository}>GitHub</a>
-      </nav>
-    </footer>
   </>;
 }

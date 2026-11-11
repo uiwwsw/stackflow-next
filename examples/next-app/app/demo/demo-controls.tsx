@@ -2,7 +2,7 @@
 import {StackflowProvider,StackLink,StackMotion,useStackRouter,useStackState,useStack,type SkeletonRoute} from '@uiwwsw/stackflow-next';
 import {useEffect,useId,useRef,useState,useSyncExternalStore,type ReactNode} from 'react';
 import {usePathname} from 'next/navigation';
-export function DraftForm(){const [draft,setDraft]=useStackState('travel-memo','');return <label className="draft-label">여행 메모<input aria-label="여행 메모" value={draft} placeholder="돌아와도 메모가 유지돼요" onChange={e=>setDraft(e.target.value)}/></label>;}
+export function DraftForm(){const [draft,setDraft]=useStackState('travel-memo','');return <label className="draft-label">여행 메모<input aria-label="여행 메모" value={draft} onChange={e=>setDraft(e.target.value)}/></label>;}
 export function DemoHeader() {
   const path = usePathname();
   return <div className="demo-header">

@@ -19,21 +19,16 @@ button, input { font: inherit; }
 
 .site-width { width: min(calc(100% - 48px), 1088px); margin-inline: auto; }
 .site-header { border-bottom: 1px solid var(--border); }
-.site-nav, .site-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.site-nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .site-nav { min-height: 66px; }
-.site-nav nav, .site-footer nav { display: flex; gap: clamp(12px, 3vw, 36px); }
-.site-nav a, .site-footer a { text-decoration: none; }
-.site-nav a:hover, .site-footer a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.site-nav nav { display: flex; gap: clamp(12px, 3vw, 36px); }
+.site-nav a { text-decoration: none; }
+.site-nav a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .site-wordmark { color: var(--green); font-size: clamp(18px, 3.5vw, 26px); font-weight: 800; }
 
-.site-intro { padding: clamp(58px, 9vw, 104px) 0 54px; text-align: center; border-bottom: 1px solid var(--border); }
-.site-intro h1 { margin: 0; font-size: clamp(42px, 7.5vw, 82px); font-weight: 850; letter-spacing: -.05em; line-height: 1.05; }
-.site-intro p { margin: 22px auto 30px; font-size: clamp(17px, 2.5vw, 25px); line-height: 1.5; word-break: keep-all; }
-.site-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
-.site-button { padding: 12px 22px; border: 1px solid var(--green); border-radius: 6px; color: var(--green); font-weight: 750; text-decoration: none; }
-.site-button-primary { color: #fff; background: var(--green); }
-.site-button:hover { text-decoration: underline; text-underline-offset: 4px; }
-
+.site-intro { padding: clamp(36px, 7vw, 72px) 0 28px; border-bottom: 1px solid var(--border); }
+.site-intro h1 { margin: 0; font-size: clamp(36px, 6vw, 60px); font-weight: 850; letter-spacing: -.05em; line-height: 1.05; }
+.site-intro p { max-width: 640px; margin: 16px 0 0; font-size: 17px; line-height: 1.5; word-break: keep-all; }
 .site-install, .site-config { padding-top: 36px; }
 .site-main h2 { margin: 0 0 16px; color: var(--green); font-size: 32px; letter-spacing: -.025em; }
 .site-main p { line-height: 1.6; }
@@ -50,23 +45,10 @@ button, input { font: inherit; }
 .site-install pre { font-size: clamp(12px, 2.2vw, 17px); }
 .site-examples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .site-examples h3 { margin: 0 0 10px; font: 13px/1.5 ui-monospace, monospace; }
-.site-footer { margin-top: 48px; padding-block: 20px; border-top: 1px solid var(--border); color: var(--green); font-weight: 700; }
 
 @media (max-width: 620px) {
   .site-width { width: calc(100% - 32px); }
   .site-examples { grid-template-columns: 1fr; }
 }
 
-.site-behavior { padding-block: 36px; border-bottom: 1px solid var(--border); }
-.site-behavior dl { margin: 0; }
-.site-behavior dl > div {
-  display: grid;
-  grid-template-columns: minmax(150px, 1fr) 3fr;
-  gap: 16px;
-  padding-block: 12px;
-}
-.site-behavior dt { font-weight: 780; }
-.site-behavior dd { margin: 0; line-height: 1.6; color: #44534a; word-break: keep-all; }
-@media (max-width: 620px) {
-  .site-behavior dl > div { grid-template-columns: 1fr; gap: 4px; }
-}
+.site-behavior { margin-block: 40px 56px; padding-top: 30px; border-top: 1px solid var(--border); }
