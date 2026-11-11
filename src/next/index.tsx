@@ -7,6 +7,7 @@ import { attachSwipeBack } from './swipe.js';
 import { attachScrollViewport } from './scroll.js';
 import type { FixedTarget } from './fixed-targets.js';
 import { createSkeletonRouteMatcher, type SkeletonRoute } from './skeleton-routes.js';
+import { loadingMessage } from './loading-message.js';
 export type { FixedTarget } from './fixed-targets.js';
 export type { RouteTransition } from './engine.js';
 export type { SkeletonRoute } from './skeleton-routes.js';
@@ -17,11 +18,6 @@ function useEngine() { const engine=useContext(Context); if(engine===undefined) 
 const noopSubscribe = () => () => {};
 const emptyStack = () => null;
 const defaultLoading = <span>Loading…</span>;
-const loadingMessages = new Map([
-  ['ko', '불러오는 중…'], ['ja', '読み込み中…'], ['zh', '正在加载…'],
-  ['es', 'Cargando…'], ['fr', 'Chargement…'], ['de', 'Wird geladen…'],
-  ['pt', 'Carregando…'], ['ar', 'جارٍ التحميل…'],
-]);
 
 const LoadingContext = createContext<ReactNode>(defaultLoading);
 
@@ -117,7 +113,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     if(!swipeBack||!viewport.current)return;
     return attachSwipeBack(engine,viewport.current,()=>router.back());
   },[swipeBack,engine,router]);
-  const message = locale && loadingMessages.get(locale.toLowerCase().split('-', 1)[0]);
+  const message = locale && loadingMessage(locale);
   const fallback = message ? <span lang={locale} dir="auto">{message}</span> : defaultLoading;
   return <Context.Provider value={engine}><LoadingContext.Provider value={loading === undefined ? fallback : loading}>
     <div className={`stackflow-next ${className}`} style={style}>

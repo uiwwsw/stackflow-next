@@ -734,6 +734,35 @@ test('navigation without swipe back does not clone the previous screen', () => {
   }
 });
 
+test('swipe back keeps a preview of the previous screen after Back in a deep stack', async () => {
+  const { engine, window, el } = setup(16);
+  window.document.body.append(el);
+  engine.setSwipeBackEnabled(true);
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  const visit = (path: string) => {
+    engine.navigate('push', path, () => window.history.pushState({}, '', path));
+    el.textContent = path;
+    engine.commit(path);
+  };
+  try {
+    el.textContent = '/';
+    for (const path of ['/a', '/b', '/c', '/d', '/e', '/f']) visit(path);
+    assert.equal(engine.previousVisual()?.textContent, '/e');
+    for (const path of ['/e', '/d', '/c']) {
+      window.history.back();
+      await settle();
+      el.textContent = path;
+      engine.commit(path);
+      const expected = `/${String.fromCharCode(path.charCodeAt(1) - 1)}`;
+      assert.equal(engine.previousVisual()?.textContent, expected, `preview below ${path}`);
+    }
+    const retained = [...engine.entries.values()].filter(entry => entry.visual).length;
+    assert.ok(retained <= 4, `retained ${retained} previews`);
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('snapshot styles are active before capture and clear if starting a transition fails', () => {
   const { engine, window } = setup();
   const root = window.document.documentElement;

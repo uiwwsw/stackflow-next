@@ -3,6 +3,8 @@ import { aggregate, makeEvent, type DomainEvent, type Stack } from '@stackflow/c
 import { findFixedTargets, matchesRoute, pinForTransition, resolveFixedSelectors, routePathname, type FixedTarget } from './fixed-targets.js';
 
 export const HISTORY_KEY = '__stackflow_next_v1';
+/** Previous screens kept as swipe-back previews. */
+const SWIPE_PREVIEW_DEPTH = 4;
 export type Entry = { id: string; position: number; url: string; scroll: number; values: Map<string, unknown>; visual?: HTMLElement };
 export type Direction = 'push' | 'pop' | 'replace';
 export type RouteTransition = { href: string; animation: 'ios' | 'modal' | 'none' };
@@ -90,11 +92,22 @@ export class NavigationEngine {
   }
   private saveVisual() {
     if (!this.swipeBackEnabled || this.hasFixedTargets()) return;
-    const el=this.viewport();if(!this.current||!el)return;
+    const el=this.viewport(), current=this.current;if(!current||!el)return;
     const offset = this.scrollElement()?.scrollTop ?? 0;
-    this.current.visual=el.cloneNode(true) as HTMLElement;this.current.visual.dataset.stackflowScroll=String(offset);
-    const others=[...this.entries.values()].filter(e=>e!==this.current&&e.visual);
-    others.slice(0,Math.max(0,others.length-1)).forEach(e=>{delete e.visual;});
+    current.visual=el.cloneNode(true) as HTMLElement;current.visual.dataset.stackflowScroll=String(offset);
+  }
+  // Swipe back only reveals screens below the current one. Keep the nearest
+  // few so it still works after Back; a forward screen is recaptured on leave.
+  // Runs after the current entry changes, so the screen being left on Back
+  // does not displace an older preview.
+  private prunePreviews() {
+    const position = this.current?.position;
+    if (position === undefined) return;
+    const retained = new Set([...this.entries.values()]
+      .filter(e => e.visual && e.position <= position)
+      .sort((a, b) => b.position - a.position)
+      .slice(0, SWIPE_PREVIEW_DEPTH));
+    for (const entry of this.entries.values()) if (!retained.has(entry)) delete entry.visual;
   }
   constructor(readonly win: Window, readonly viewport: () => HTMLElement | null,
     readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number; waitForPage?: boolean },
@@ -298,6 +311,7 @@ export class NavigationEngine {
       makeEvent('ActivityRegistered',{id:'register',activityName:'NextRoute',eventDate:date-1}),
       ...entries.map((e,i)=>makeEvent('Pushed',{id:`push-${e.id}`,activityId:e.id,activityName:'NextRoute',activityParams:{url:e.url},eventDate:date+i})),
     ];
+    this.prunePreviews();
     this.stack = aggregate(events, Date.now()); this.emit();
   }
   private release() {
