@@ -46,3 +46,31 @@ test('navigation without swipe back does not clone the previous screen', () => {
     engine.dispose();
   }
 });
+
+test('back restores the selected region and keeps its position in the swipe preview', () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const body = win.document.createElement('div');
+  const target = win.document.createElement('main');
+  body.append(target);
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => body as unknown as HTMLElement,
+    { animation: 'none', preserveScroll: true, timeout: 30, maxEntries: 3 }, () => target as unknown as HTMLElement);
+  engine.connect();
+  engine.setSwipeBackEnabled(true);
+  try {
+    const first = win.history.state;
+    body.scrollTop = 15;
+    target.scrollTop = 123;
+    engine.navigate('push', '/detail', () => win.history.pushState({}, '', '/detail'));
+    engine.commit('/detail');
+    assert.equal(target.scrollTop, 0);
+    assert.equal(engine.previousVisual()?.dataset.stackflowScroll, '123');
+
+    Object.getPrototypeOf(win.history).replaceState.call(win.history, first, '', '/');
+    win.dispatchEvent(new win.PopStateEvent('popstate', { state: first }));
+    engine.commit('/');
+    assert.equal(target.scrollTop, 123);
+    assert.equal(body.scrollTop, 15);
+  } finally {
+    engine.dispose();
+  }
+});

@@ -1,4 +1,5 @@
 import type { NavigationEngine } from './engine.js';
+import { previewScrollElement } from './scroll.js';
 /** A visual preview only; actual React state is retained by Next Activity. */
 export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, back: () => void) {
   const win = content.ownerDocument.defaultView!;
@@ -53,7 +54,7 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
     content.style.position = 'relative';
     content.style.zIndex = '1';
     parent.append(background);
-    background.scrollTop = Number(previous.dataset.stackflowScroll ?? 0);
+    previewScrollElement(background).scrollTop = Number(previous.dataset.stackflowScroll ?? 0);
     return background;
   }
 

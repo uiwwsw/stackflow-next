@@ -1,9 +1,10 @@
 'use client';
-import { createContext, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import { createContext, Suspense, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import Link, { type LinkProps } from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { NavigationEngine, safeHref } from './engine.js';
 import { attachSwipeBack } from './swipe.js';
+import { attachScrollViewport } from './scroll.js';
 
 const Context = createContext<NavigationEngine | null | undefined>(undefined);
 function useEngine() { const engine=useContext(Context); if(engine===undefined) throw new Error('Wrap your layout in StackflowProvider'); return engine; }
@@ -21,22 +22,35 @@ export interface StackflowProviderProps {
   footer?: ReactNode;
   animation?: 'ios' | 'none';
   preserveScroll?: boolean;
+  /** CSS selector for a single visible scroll region inside the provider body. */
+  scrollTarget?: string;
   swipeBack?: boolean;
   maxEntries?: number;
   navigationTimeout?: number;
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,animation='ios',preserveScroll=true,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,animation='ios',preserveScroll=true,scrollTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
+  const indicator=useRef<HTMLDivElement>(null);
+  const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
+  const engineRef=useRef<NavigationEngine | null>(null);
   const [engine,setEngine]=useState<NavigationEngine|null>(null);
   const router=useRouter();
   useLayoutEffect(()=>{
+    if (!viewport.current || !indicator.current) return;
+    const controller = attachScrollViewport(viewport.current, indicator.current, scrollTarget,
+      element => engineRef.current?.capture(element), element => engineRef.current?.restoreScroll(element));
+    scroll.current = controller;
+    return () => { controller.dispose(); scroll.current = null; };
+  },[scrollTarget]);
+  useLayoutEffect(()=>{
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
-    const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries});
-    const disconnect=value.connect(); setEngine(value);
-    return ()=>{ disconnect(); value.dispose(); };
+    const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries},
+      () => scroll.current?.getElement(true) ?? viewport.current);
+    const disconnect=value.connect(); engineRef.current=value; setEngine(value);
+    return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
   },[animation,preserveScroll,maxEntries,navigationTimeout]);
   useLayoutEffect(()=>{
     if(!engine)return;
@@ -48,34 +62,13 @@ export function StackflowProvider({children,header,footer,animation='ios',preser
     <div className={`stackflow-next ${className}`} style={style}>
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
-        <div ref={viewport} className="stackflow-next-content" onScroll={()=>engine?.capture()}>{children}</div>
-        <ScrollIndicator viewport={viewport}/>
+        <div ref={viewport} className="stackflow-next-content">{children}</div>
+        <div ref={indicator} className="stackflow-next-indicator" aria-hidden="true"/>
       </div>
       {footer && <div className="stackflow-next-footer">{footer}</div>}
     </div>
     <Suspense fallback={null}><RouteObserver engine={engine}/></Suspense>
   </Context.Provider>;
-}
-function ScrollIndicator({viewport}: {viewport: React.RefObject<HTMLDivElement|null>}) {
-  const thumb=useRef<HTMLDivElement>(null);
-  useEffect(()=>{
-    const el=viewport.current; if(!el) return;
-    let timer: ReturnType<typeof setTimeout>, frame=0;
-    const paint=()=>{
-      frame=0; const indicator=thumb.current;if(!indicator) return;
-      const {clientHeight:h,scrollHeight:total,scrollTop:y}=el;
-      const height=Math.min(h,Math.max(24,h*h/Math.max(total,1)));
-      indicator.style.height=`${height}px`; indicator.style.transform=`translateY(${total>h?y/(total-h)*(h-height):0}px)`;
-      indicator.style.opacity=total>h?'1':'0'; clearTimeout(timer);
-      timer=setTimeout(()=>{indicator.style.opacity='0';},700);
-    };
-    const update=()=>{if(!frame)frame=requestAnimationFrame(paint);};
-    const resize=new ResizeObserver(update);resize.observe(el);
-    const mutation=new MutationObserver(update);mutation.observe(el,{subtree:true,childList:true,characterData:true});
-    el.addEventListener('scroll',update,{passive:true});el.addEventListener('load',update,true);window.addEventListener('resize',update);update();
-    return ()=>{resize.disconnect();mutation.disconnect();el.removeEventListener('scroll',update);el.removeEventListener('load',update,true);window.removeEventListener('resize',update);cancelAnimationFrame(frame);clearTimeout(timer);};
-  },[viewport]);
-  return <div ref={thumb} className="stackflow-next-indicator" aria-hidden="true"/>;
 }
 export function useStackRouter() {
   const engine=useEngine(),router=useRouter();
