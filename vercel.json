@@ -2,5 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npm run build && next build examples/next-app --webpack",
-  "outputDirectory": "examples/next-app/.next"
+  "outputDirectory": "examples/next-app/.next",
+  "redirects": [
+    {
+      "source": "/stackflow-next-0.2.0-alpha.2.tgz",
+      "destination": "https://registry.npmjs.org/@uiwwsw/stackflow-next/-/stackflow-next-0.2.0-alpha.2.tgz",
+      "permanent": true
+    }
+  ]
 }
