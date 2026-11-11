@@ -42,12 +42,14 @@ export class NavigationEngine {
   private saveVisual() {
     if (!this.swipeBackEnabled) return;
     const el=this.viewport();if(!this.current||!el)return;
-    this.current.visual=el.cloneNode(true) as HTMLElement;this.current.visual.dataset.stackflowScroll=String(el.scrollTop);
+    const offset = this.scrollElement()?.scrollTop ?? 0;
+    this.current.visual=el.cloneNode(true) as HTMLElement;this.current.visual.dataset.stackflowScroll=String(offset);
     const others=[...this.entries.values()].filter(e=>e!==this.current&&e.visual);
     others.slice(0,Math.max(0,others.length-1)).forEach(e=>{delete e.visual;});
   }
   constructor(readonly win: Window, readonly viewport: () => HTMLElement | null,
-    readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number }) {}
+    readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number },
+    private readonly scrollElement = viewport) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private emit() { this.listeners.forEach(fn => fn()); }
   private remember(meta: {id: string; position: number}, url: string) {
@@ -114,7 +116,10 @@ export class NavigationEngine {
     };
     return this.cleanup;
   }
-  capture() { if (this.current) this.current.scroll = this.viewport()?.scrollTop ?? 0; }
+  capture(element = this.scrollElement()) { if (this.current && element) this.current.scroll = element.scrollTop; }
+  restoreScroll(element = this.scrollElement()) {
+    if (this.options.preserveScroll && element) element.scrollTop = this.current?.scroll ?? 0;
+  }
   private rebuild() {
     if (!this.current) return;
     const entries = [...this.entries.values()].filter(e=>e.position <= this.current!.position).sort((a,b)=>a.position-b.position);
@@ -175,7 +180,7 @@ export class NavigationEngine {
     if (this.expected && routeKey(new URL(this.expected, this.win.location.href)) !== route) return;
     const meta = metadata(this.win.history.state);
     if (meta) this.current = this.remember(meta,this.url());
-    if (this.options.preserveScroll && this.viewport()) this.viewport()!.scrollTop = this.current?.scroll ?? 0;
+    this.restoreScroll();
     this.rebuild(); this.release();
   }
   read<T>(key: string, fallback: T): T { return this.current?.values.has(key) ? this.current.values.get(key) as T : fallback; }

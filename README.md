@@ -13,8 +13,8 @@ Install the current prerelease from npm.
 npm install @uiwwsw/stackflow-next@next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.3`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.3)
+The `next` tag currently points to `0.2.0-alpha.4`. See the
+[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.4)
 and [live demo](https://stackflow-next.vercel.app/).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
@@ -72,7 +72,7 @@ export function Actions() {
 
 - Existing file routes, URLs, direct entry, SSR and streaming stay owned by Next.
 - Normal `useState` and DOM state survive while Next retains that route's Activity.
-- `preserveScroll` restores the provider's content scroll offset per history entry.
+- `preserveScroll` restores the active scroll region's offset per history entry.
 - `StackLink` preserves Next prefetching, modified clicks and `onNavigate` cancellation.
 - `useStackRouter` exposes push, replace, back, forward, prefetch and refresh.
 - Browser back/forward updates the navigation state. Push and pop have opposite motion.
@@ -80,6 +80,24 @@ export function Actions() {
   non-draggable indicator confined below the header and above the footer.
 - Control selection, callout and tap-highlight styling is scoped to controls;
   editable fields and `data-selectable` retain selection.
+
+## Choose which area scrolls
+
+By default, the provider body scrolls. Use `scrollTarget` to delegate scrolling,
+the indicator, and scroll restoration to one visible HTML element inside it.
+Give that element a bounded height so its contents can overflow.
+
+```tsx
+<StackflowProvider header={<AppHeader />} scrollTarget="[data-app-scroll]">
+  <main data-app-scroll style={{ height: '100%' }}>{children}</main>
+</StackflowProvider>
+```
+
+The provider body stops scrolling while the target is active. The target uses
+native scrolling with a visual indicator inside its bounds. Keep the selector
+unique within the visible screen; hidden routes retained by Next do not count.
+An invalid selector or a selector with zero or multiple visible matches falls
+back to the provider body and logs a warning in development.
 
 ## Interactive back gesture
 

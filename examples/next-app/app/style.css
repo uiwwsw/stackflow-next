@@ -7,3 +7,5 @@
 .intro,.demo-area,.api-section>*{min-width:0}.install{max-width:100%}.api-section{grid-template-columns:minmax(0,1.65fr) minmax(0,1fr)}@media(max-width:720px){.api-section{grid-template-columns:minmax(0,1fr)}}
 
 h1{white-space:normal}.lead{word-break:keep-all}
+
+.demo-scroll-body{height:100%;margin-inline:6px}
