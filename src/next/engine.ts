@@ -5,6 +5,7 @@ export type Entry = { id: string; position: number; url: string; scroll: number;
 export type Direction = 'push' | 'pop' | 'replace';
 type Transition = { finished: Promise<void>; ready: Promise<void>; skipTransition(): void };
 type TransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => Transition };
+type TransitionElement = HTMLElement & { startViewTransition?: (update: () => Promise<void>) => Transition };
 export function safeHref(href: string, base: string) {
   const url = new URL(href, base), origin = new URL(base).origin;
   if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol)) throw new TypeError('Only same-origin HTTP(S) navigation is supported');
@@ -31,6 +32,7 @@ export class NavigationEngine {
   private transition: Transition | null = null;
   private transitionBounds: DOMRect | undefined;
   private stopWatchingBounds: (() => void) | undefined;
+  private transitionScope: HTMLElement | undefined;
   private disconnected = false;
   private cleanup: (() => void) | null = null;
   private swipeBackEnabled = false;
@@ -50,7 +52,7 @@ export class NavigationEngine {
     others.slice(0,Math.max(0,others.length-1)).forEach(e=>{delete e.visual;});
   }
   constructor(readonly win: Window, readonly viewport: () => HTMLElement | null,
-    readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number },
+    readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number; existingLayout?: boolean },
     private readonly scrollElement = viewport) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private emit() { this.listeners.forEach(fn => fn()); }
@@ -76,7 +78,8 @@ export class NavigationEngine {
     replace.call(history, {...history.state, [HISTORY_KEY]: initial}, '', this.win.location.href);
     this.current = this.remember(initial, this.url());
     const oldRestoration = history.scrollRestoration;
-    if (this.options.preserveScroll) history.scrollRestoration = 'manual';
+    const manageDocumentScroll = this.options.preserveScroll && !this.options.existingLayout;
+    if (manageDocumentScroll) history.scrollRestoration = 'manual';
     const engine = this;
     const wrappedPush: History['pushState'] = function(data, unused, url) {
       if (engine.disconnected) return push.call(history,data,unused,url);
@@ -107,10 +110,10 @@ export class NavigationEngine {
     this.win.addEventListener('popstate', pop);
     this.rebuild();
     this.cleanup = () => {
-      this.disconnected = true; this.release(); this.transition?.skipTransition(); this.clearTransitionBounds();
+      this.disconnected = true; this.release(); this.transition?.skipTransition(); this.clearTransitionBounds(); this.clearTransitionScope();
       if (history.pushState === wrappedPush) history.pushState = push;
       if (history.replaceState === wrappedReplace) history.replaceState = replace;
-      history.scrollRestoration = oldRestoration;
+      if (manageDocumentScroll) history.scrollRestoration = oldRestoration;
       this.win.removeEventListener('popstate', pop);
       delete this.win.document.documentElement.dataset.stackflowDirection;
       delete this.win.document.documentElement.dataset.stackflowAnimating;
@@ -119,6 +122,9 @@ export class NavigationEngine {
     return this.cleanup;
   }
   capture(element = this.scrollElement()) { if (this.current && element) this.current.scroll = element.scrollTop; }
+  scrollOptions() {
+    return !this.options.existingLayout || (this.options.preserveScroll && this.scrollElement()) ? { scroll: false } : undefined;
+  }
   restoreScroll(element = this.scrollElement()) {
     if (this.options.preserveScroll && element) element.scrollTop = this.current?.scroll ?? 0;
   }
@@ -139,6 +145,11 @@ export class NavigationEngine {
     this.stopWatchingBounds = undefined;
     this.transitionBounds = undefined;
   }
+  private clearTransitionScope() {
+    this.transitionScope?.removeAttribute('data-stackflow-scoped-target');
+    this.transitionScope = undefined;
+    delete this.win.document.documentElement.dataset.stackflowScoped;
+  }
   private checkTransitionBounds = () => {
     const before = this.transitionBounds;
     if (!before || !this.transition) return;
@@ -152,6 +163,7 @@ export class NavigationEngine {
   begin(direction: Direction, href: string | null, action: () => void) {
     this.release(); this.transition?.skipTransition(); this.transition = null;
     this.clearTransitionBounds();
+    this.clearTransitionScope();
     const { dataset } = this.win.document.documentElement;
     delete dataset.stackflowAnimating;
     this.direction = direction; this.expected = href;
@@ -176,17 +188,24 @@ export class NavigationEngine {
       try { action(); } catch (error) { rejectPending(error); this.release(); }
       return pending;
     };
-    if (direction !== 'replace' && doc.startViewTransition && !reduced && this.options.animation !== 'none') {
-      const viewport = this.viewport();
+    const viewport = direction !== 'replace' && !reduced && this.options.animation !== 'none' ? this.viewport() : null;
+    const scope = this.options.existingLayout ? viewport as TransitionElement | null : null;
+    const start = this.options.existingLayout ? scope?.startViewTransition?.bind(scope) : doc.startViewTransition?.bind(doc);
+    if (direction !== 'replace' && start && !reduced && this.options.animation !== 'none') {
       this.transitionBounds = viewport?.getBoundingClientRect();
       dataset.stackflowAnimating = 'true';
+      if (scope) {
+        this.transitionScope = scope;
+        scope.setAttribute('data-stackflow-scoped-target', '');
+        dataset.stackflowScoped = 'true';
+      }
       try {
-        const transition = doc.startViewTransition(run); this.transition = transition;
+        const transition = start(run); this.transition = transition;
         if (viewport) {
           const Observer = doc.defaultView?.ResizeObserver;
           const observer = Observer ? new Observer(this.checkTransitionBounds) : undefined;
           observer?.observe(viewport);
-          const frame = viewport.parentElement?.parentElement;
+          const frame = scope ? viewport.parentElement : viewport.parentElement?.parentElement;
           if (frame) for (const slot of frame.children) observer?.observe(slot);
           this.win.addEventListener('scroll', this.checkTransitionBounds, { passive: true });
           this.stopWatchingBounds = () => {
@@ -195,8 +214,8 @@ export class NavigationEngine {
           };
         }
         transition.ready.catch(()=>{});
-        transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); delete dataset.stackflowAnimating; } });
-      } catch { this.clearTransitionBounds(); delete dataset.stackflowAnimating; void run().catch(()=>{}); }
+        transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); this.clearTransitionScope(); delete dataset.stackflowAnimating; } });
+      } catch { this.clearTransitionBounds(); this.clearTransitionScope(); delete dataset.stackflowAnimating; void run().catch(()=>{}); }
     } else { void run().catch(()=>{}); }
   }
   navigate(direction: Direction, href: string | null, action: () => void) {
