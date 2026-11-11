@@ -77,7 +77,7 @@ export function Actions() {
 - Reloads and direct URL opens render immediately. In-app pushes and browser
   Back/Forward play the stack transition. Push and pop slide horizontally
   in opposite directions. If the viewport's vertical bounds change during navigation,
-  Stackflow switches directly to the new page. Replace switches directly as well.
+  Stackflow switches directly to the new page. By default, replace switches directly.
 - Native scrolling remains active. Its hidden scrollbar is replaced by a visual,
   non-draggable indicator confined below the header and above the footer.
 - Control selection, callout and tap-highlight styling is scoped to controls;
@@ -99,7 +99,8 @@ inside it, pass one CSS selector or an array to `fixedTargets`:
 Place shared targets in the layout so the same elements remain mounted and keep
 the same bounds across routes. The option does not change their CSS positioning.
 If a selected element moves, is replaced, is clipped by the viewport, or the
-browser cannot isolate it from the page capture, navigation skips the slide.
+browser cannot fit it in the page capture, navigation skips the slide. A browser
+with View Transitions but without fixed-target isolation slides the whole page.
 With `fixedTargets` configured, an edge swipe triggers Back on release without
 dragging the live page. Existing `header`, `footer`, and `persistent` slots remain
 outside the slide automatically.
@@ -118,7 +119,7 @@ Declare the rule once on the shared provider. If `/checkout` renders without
 the header, the header slides out on entry and returns with the previous page
 on Back. Forward applies the same route exception. The header stays still
 between other routes when its DOM node and bounds stay
-the same. Exceptions match exact pathnames, ignoring query strings, fragments,
+the same. Exceptions match exact pathnames and any query pairs in the rule, ignoring fragments
 and trailing slashes. The app renders the header appropriate to the current
 route. Mix exception rules and plain selectors in an array to control each
 element independently.
@@ -141,8 +142,9 @@ opened and down when leaving, including through browser Back and Forward.
 ```
 
 Open with `StackLink` or `useStackRouter().push()` and close with
-`useStackRouter().back()`. Each path matches exactly, ignoring query strings,
-fragments, and trailing slashes. Motion applies to the provider's content area.
+`useStackRouter().back()`. A pathname-only rule matches all queries on that
+path. A rule with query pairs requires those pairs. Fragments and trailing
+slashes do not affect the match. Motion applies to the provider's content area.
 For a viewport-sized popup, give the provider a viewport height and render the
 UI to cover its content area. Shared `header`, `footer`, and `persistent` slots
 sit outside that area. Elements inside the content area participate in the
@@ -151,6 +153,34 @@ modal transition, including elements configured in `fixedTargets`.
 Direct loads render immediately, and navigation between two modal routes uses
 the regular horizontal slide. This option controls route motion. The app owns
 the popup content and its close control.
+
+## Animate query-driven screens
+
+```tsx
+<StackflowProvider
+  transitionRoutes={[
+    { href: '/feed?panel=filters', animation: 'modal' },
+    { href: '/feed?panel=details', animation: 'ios' },
+    { href: '/feed?panel=inline', animation: 'none' },
+  ]}
+  skeletonRoutes={['/feed?panel=details']}
+  fixedTargets={{ selector: '#header', exceptRoutes: ['/feed?panel=details'] }}
+>
+  {children}
+</StackflowProvider>
+```
+
+The first matching rule applies to each URL. Required query pairs can appear
+in any order alongside other parameters. Entering a `modal` route slides up
+and leaving it slides down. `ios` uses the horizontal slide, and `none`
+disables animation when entering or leaving that route. Use `StackLink` or
+`useStackRouter().push()` to create an entry for browser Back and Forward.
+`replace()` can animate an explicit rule without adding an entry.
+
+`modalRoutes`, `skeletonRoutes`, and `fixedTargets.exceptRoutes` also accept
+pathnames with query pairs. In this example the details panel can slide in
+with its skeleton and the header slides with it. Use application paths without
+the Next.js `basePath` prefix in these rules.
 
 ## Choose which area scrolls
 
@@ -244,8 +274,9 @@ In 1.0, the `loading` prop supplies default content for `StackLoading` and
 can be set to `null` for a marker with no visible content. The outgoing
 screen stays visible without a provider-wide loading overlay. The
 `navigationTimeout` option (default 4000 ms) releases a stalled snapshot.
-Redirects and competing history or View Transition libraries require
-application-specific testing.
+When a client-side redirect commits a different route, Stackflow records the
+actual destination and releases the snapshot. Competing history or View
+Transition libraries require application-specific testing.
 
 Browsers without View Transitions use ordinary navigation. Initial page loads,
 reloads, and links activated before hydration follow browser navigation. Only same-origin

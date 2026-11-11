@@ -1,6 +1,37 @@
-import {Suspense} from 'react';
-import {StackLink} from '@uiwwsw/stackflow-next';
-import {DraftForm,ReplaceHome} from '../demo-controls';
-async function Detail({searchParams}:{searchParams:Promise<{city?:string}>}){const {city}=await searchParams;const title=({seoul:'Seoul',jeju:'Jeju',busan:'Busan'} as Record<string,string>)[city??'seoul']??'Seoul';return <article className="screen detail-screen"><div className={`detail-art ${city??'seoul'}`}><span>{title}</span></div><h2>{title}에서의 하루</h2><p>이 화면은 파일 기반 경로에서 렌더링한 Server Component입니다. 직접 URL로 들어오거나 새로고침해도 정상적으로 열립니다.</p><DraftForm/><p className="helper">각 방문의 메모는 별도로 저장됩니다. Back으로 돌아가 목록의 메모와 스크롤을 확인하세요.</p><StackLink className="stream-link" href="/slow" prefetch={false}>스트리밍 화면 열기</StackLink><ReplaceHome/></article>;}
+import { Suspense } from 'react';
+import { StackLink, StackLoading } from '@uiwwsw/stackflow-next';
+import { CloseMap, DraftForm, ReplaceHome } from '../demo-controls';
 
-export default function Page(props: {searchParams:Promise<{city?:string}>}){return <Suspense fallback={<article className="screen">상세를 준비하고 있어요…</article>}><Detail {...props}/></Suspense>;}
+type DetailProps = { searchParams: Promise<{ city?: string; panel?: string }> };
+const cities = { seoul: 'Seoul', jeju: 'Jeju', busan: 'Busan' };
+
+async function Detail({searchParams}: DetailProps) {
+  const {city, panel} = await searchParams;
+  const cityKey = city === 'jeju' || city === 'busan' ? city : 'seoul';
+  const title = cities[cityKey];
+  const detailHref = `/detail?city=${cityKey}`;
+
+  if (panel === 'map') {
+    return <article className="screen detail-screen">
+      <h2>{title} 지도</h2>
+      <div className={`detail-art ${cityKey}`}><span>{title}</span></div>
+      <CloseMap href={detailHref} />
+    </article>;
+  }
+
+  return <article className="screen detail-screen">
+    <div className={`detail-art ${cityKey}`}><span>{title}</span></div>
+    <h2>{title}에서의 하루</h2>
+    <DraftForm />
+    <StackLink className="stream-link" href={`${detailHref}&panel=map`}>지도 팝업 열기</StackLink>
+    <p className="helper">Back으로 돌아가 목록의 메모와 스크롤을 확인하세요.</p>
+    <StackLink className="stream-link" href="/slow" prefetch={false}>스트리밍 화면 열기</StackLink>
+    <ReplaceHome />
+  </article>;
+}
+
+export default function Page(props: DetailProps) {
+  return <Suspense fallback={<StackLoading><article className="screen">상세를 준비하고 있어요…</article></StackLoading>}>
+    <Detail {...props} />
+  </Suspense>;
+}

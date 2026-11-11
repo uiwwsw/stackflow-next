@@ -16,17 +16,24 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
   } | null = null;
   let unsubscribe: (()=>void)|undefined;
   let timer: ReturnType<typeof setTimeout>|undefined;
+  let restorePreviewStyles: (() => void) | undefined;
   let settling=false;
   const reset=()=>{
-    gesture?.background?.remove();gesture=null;settling=false;unsubscribe?.();unsubscribe=undefined;clearTimeout(timer);
-    content.style.transform='';content.style.willChange='';content.style.position='';content.style.zIndex='';
+    gesture?.background?.remove();gesture=null;settling=false;unsubscribe?.();unsubscribe=undefined;
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+      engine.skipNextPopAnimation = false;
+    }
+    restorePreviewStyles?.();
+    restorePreviewStyles = undefined;
   };
   const down=(event:PointerEvent)=>{
-    if(settling||gesture||!event.isPrimary||event.button!==0)return;
+    if(settling||gesture||engine.isPending()||!event.isPrimary||event.button!==0)return;
     const bounds=content.getBoundingClientRect();
     if(event.clientX<bounds.left||event.clientX-bounds.left>24)return;
     if((event.target as Element).closest('input,textarea,select,[contenteditable],[data-stackflow-no-swipe]'))return;
-    const fixed = engine.hasFixedTargets() || engine.hasModalBackTransition();
+    const fixed = engine.hasFixedTargets() || engine.usesNonInteractiveBack();
     const previous = fixed ? undefined : engine.previousVisual();
     if (fixed ? !engine.hasPreviousEntry() : !previous) return;
     gesture = {
@@ -56,6 +63,13 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
     });
     background.removeAttribute('id');
     background.querySelectorAll('[id]').forEach(element => element.removeAttribute('id'));
+    const properties = ['transform', 'will-change', 'position', 'z-index'];
+    const original = properties.map(name => ({
+      name, value: content.style.getPropertyValue(name), priority: content.style.getPropertyPriority(name),
+    }));
+    restorePreviewStyles = () => {
+      for (const {name, value, priority} of original) content.style.setProperty(name, value, priority);
+    };
     content.style.willChange = 'transform';
     content.style.position = 'relative';
     content.style.zIndex = '1';
@@ -110,13 +124,16 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
     if(!commit){reset();return;}
     content.style.transform=`translateX(${width}px)`;
     saved.background.style.transform='translateX(0)';
-    unsubscribe=engine.subscribe(reset);
+    const source = engine.current;
+    unsubscribe=engine.subscribe(() => {
+      if (engine.current !== source || engine.isPending()) reset();
+    });
     timer=setTimeout(reset,engine.options.timeout);
     engine.skipNextPopAnimation=true;
     back();
   };
   const up=(event:PointerEvent)=>{if(gesture?.id===event.pointerId)void finish(false);};
-  const cancel=()=>{void finish(true);};
+  const cancel=(event:PointerEvent)=>{if(gesture?.id===event.pointerId)void finish(true);};
   const previousTouchAction=content.style.touchAction;content.style.touchAction='pan-y';
   content.addEventListener('pointerdown',down);content.addEventListener('pointermove',move,{passive:false});
   content.addEventListener('pointerup',up);content.addEventListener('pointercancel',cancel);

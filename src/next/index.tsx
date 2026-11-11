@@ -2,11 +2,12 @@
 import { createContext, Suspense, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import Link, { type LinkProps } from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { NavigationEngine, safeHref } from './engine.js';
+import { NavigationEngine, safeHref, type RouteTransition } from './engine.js';
 import { attachSwipeBack } from './swipe.js';
 import { attachScrollViewport } from './scroll.js';
 import type { FixedTarget } from './fixed-targets.js';
 export type { FixedTarget } from './fixed-targets.js';
+export type { RouteTransition } from './engine.js';
 
 const Context = createContext<NavigationEngine | null | undefined>(undefined);
 function useEngine() { const engine=useContext(Context); if(engine===undefined) throw new Error('Wrap your layout in StackflowProvider'); return engine; }
@@ -23,7 +24,8 @@ export function StackLoading({children}: {children?: ReactNode}) {
 
 function RouteObserver({engine}: {engine: NavigationEngine | null}) {
   const path=usePathname(), search=useSearchParams();
-  const route=path + (search.toString() ? `?${search}` : '');
+  const query=search.toString();
+  const route=query ? `${path}?${query}` : path;
   useLayoutEffect(()=>{ engine?.commit(route); },[engine,route]);
   return null;
 }
@@ -39,8 +41,10 @@ export interface StackflowProviderProps {
   scrollTarget?: string;
   /** CSS selectors for shared elements inside the page that should not slide. */
   fixedTargets?: FixedTarget | readonly FixedTarget[];
-  /** Exact pathnames presented as full-height modal pages. */
+  /** Routes presented as full-height modal pages. */
   modalRoutes?: readonly string[];
+  /** First matching animation override for an app pathname and optional query values. */
+  transitionRoutes?: readonly RouteTransition[];
   /** @deprecated Remove this prop. The full page is always the transition surface. */
   transitionTarget?: string;
   swipeBack?: boolean;
@@ -48,17 +52,18 @@ export interface StackflowProviderProps {
   navigationTimeout?: number;
   /** Wait for visible StackLoading boundaries to finish before animating. Defaults to true. */
   waitForPage?: boolean;
-  /** Exact destination pathnames that can slide in with their loading fallback visible. */
+  /** Destinations that can slide in with their loading fallback visible. */
   skeletonRoutes?: readonly string[];
   /** Default content for StackLoading. Pass null for an invisible readiness marker. */
   loading?: ReactNode;
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,skeletonRoutes,loading=defaultLoading,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,skeletonRoutes,loading=defaultLoading,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
   const modals = useRef<readonly string[]>([]);
+  const transitions = useRef<readonly RouteTransition[]>([]);
   const skeletons = useRef<readonly string[]>([]);
   const indicator=useRef<HTMLDivElement>(null);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
@@ -66,6 +71,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
   const [engine,setEngine]=useState<NavigationEngine|null>(null);
   const router=useRouter();
   useLayoutEffect(() => { modals.current = modalRoutes ?? []; }, [modalRoutes]);
+  useLayoutEffect(() => { transitions.current = transitionRoutes ?? []; }, [transitionRoutes]);
   useLayoutEffect(() => { skeletons.current = skeletonRoutes ?? []; }, [skeletonRoutes]);
   useLayoutEffect(() => {
     if (fixedTargets == null) fixed.current = [];
@@ -88,7 +94,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
     const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries,waitForPage},
-      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, () => skeletons.current);
+      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, () => skeletons.current, () => transitions.current);
     const disconnect=value.connect(); engineRef.current=value; setEngine(value);
     return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
   },[animation,preserveScroll,maxEntries,navigationTimeout,waitForPage]);
@@ -114,8 +120,8 @@ export function StackflowProvider({children,header,footer,persistent,animation='
 export function useStackRouter() {
   const engine=useEngine(),router=useRouter();
   return useMemo(()=>({
-    push(href:string){href=safeHref(href,window.location.href);if(engine)engine.navigate('push',href,()=>router.push(href,{scroll:false}));else router.push(href,{scroll:false});},
-    replace(href:string){href=safeHref(href,window.location.href);if(engine)engine.navigate('replace',href,()=>router.replace(href,{scroll:false}));else router.replace(href,{scroll:false});},
+    push(href:string){const destination=engine?.resolveHref(href) ?? safeHref(href,window.location.href);if(engine)engine.navigate('push',href,()=>router.push(destination,{scroll:false}));else router.push(destination,{scroll:false});},
+    replace(href:string){const destination=engine?.resolveHref(href) ?? safeHref(href,window.location.href);if(engine)engine.navigate('replace',href,()=>router.replace(destination,{scroll:false}));else router.replace(destination,{scroll:false});},
     back(){if(engine)engine.navigate('pop',null,()=>router.back());else router.back();},
     forward(){if(engine)engine.navigate('push',null,()=>router.forward());else router.forward();},
     prefetch:router.prefetch, refresh:router.refresh,
@@ -141,6 +147,7 @@ export function useStackState<T>(key:string,initial:T|(()=>T)): [T,Dispatch<SetS
 export type StackLinkProps = Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>,'href'> & Omit<LinkProps,'href'> & {href:string};
 export function StackLink({href,onNavigate,replace,...props}:StackLinkProps) {
   const router=useStackRouter();
+  const engine=useEngine();
   return <Link {...props} href={href} replace={replace} onNavigate={event=>{
     let cancelled=false;
     onNavigate?.({preventDefault(){cancelled=true;event.preventDefault();}});
@@ -148,7 +155,7 @@ export function StackLink({href,onNavigate,replace,...props}:StackLinkProps) {
     const url=new URL(href,window.location.href);
     if(url.origin!==window.location.origin||!['http:','https:'].includes(url.protocol))return;
     // Let Next handle same-document anchors and unchanged routes.
-    if(url.pathname===window.location.pathname&&url.search===window.location.search)return;
+    if(engine ? engine.isCurrentRoute(href) : url.pathname===window.location.pathname&&url.search===window.location.search)return;
     event.preventDefault(); (replace?router.replace:router.push)(href);
   }}/>;
 }

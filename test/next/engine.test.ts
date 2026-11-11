@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import {Window} from 'happy-dom';
 import {NavigationEngine,HISTORY_KEY,safeHref} from '../../src/next/engine.ts';
 function setup(maxEntries=3){const window=new Window({url:'http://localhost/'});const el=window.document.createElement('main');const engine=new NavigationEngine(window as unknown as globalThis.Window,()=>el as unknown as HTMLElement,{animation:'none',preserveScroll:true,timeout:30,maxEntries});engine.connect();return {engine,window,el};}
-test('rejects executable and cross-origin destinations',()=>{for(const href of ['javascript:alert(1)','https://evil.example','//evil.example'])assert.throws(()=>safeHref(href,'http://localhost/'));assert.equal(safeHref('/a?q=1#part','http://localhost/'),'/a?q=1#part');});
+test('rejects executable and ambiguous cross-origin destinations',()=>{
+  for(const href of ['javascript:alert(1)','https://example.invalid','//example.invalid','http://localhost//example.invalid']) {
+    assert.throws(()=>safeHref(href,'http://localhost/'));
+  }
+  assert.equal(safeHref('http://localhost/a?q=1#part','http://localhost/'),'/a?q=1#part');
+});
 test('history state preserves Next metadata; Stackflow reflects committed routes',()=>{const {engine,window}=setup();window.history.replaceState({...window.history.state,__NA:true},'');engine.navigate('push','/b',()=>window.history.pushState({__NA:true},'','/b'));engine.commit('/b');assert.equal(window.history.state.__NA,true);assert.ok(window.history.state[HISTORY_KEY]);assert.equal(engine.stack?.activities.find(activity=>activity.isTop)?.params.url,'/b');engine.dispose();});
 test('per-entry state and scroll restore after pop with distinct repeated URLs',()=>{const {engine,window,el}=setup();const first=window.history.state;engine.write('draft','hello');el.scrollTop=120;engine.navigate('push','/b',()=>window.history.pushState({},'','/b'));engine.commit('/b');el.scrollTop=0;window.history.replaceState({...window.history.state},'');
 // Simulate a browser traversal: native replace bypasses our wrapper, then popstate.
@@ -27,6 +32,167 @@ test('a route commit accepts equivalent URL and search parameter encodings', () 
 
     assert.equal(window.document.documentElement.dataset.stackflowPending, undefined);
     assert.equal(engine.stack?.activities.find(activity => activity.isTop)?.params.url, destination);
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('rapid Back then Forward to the rendered route cancels the stale snapshot and preserves scroll', async () => {
+  const { engine, window, el } = setup();
+  const callbacks: Array<() => Promise<void>> = [];
+  const delivered: string[] = [];
+  window.addEventListener('popstate', () => delivered.push(window.location.pathname));
+  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    callbacks.push(callback);
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  try {
+    window.history.replaceState({ __NA: true }, '');
+    const home = window.history.state;
+    el.scrollTop = 120;
+    window.history.pushState({ __NA: true }, '', '/detail');
+    engine.commit('/detail');
+    const detail = window.history.state;
+    el.scrollTop = 30;
+    engine.options.animation = 'ios';
+    const replace = Object.getPrototypeOf(window.history).replaceState;
+    replace.call(window.history, home, '', '/');
+    window.dispatchEvent(new window.PopStateEvent('popstate', { state: home }));
+    assert.equal(engine.isPending(), true);
+    assert.deepEqual(delivered, []);
+
+    replace.call(window.history, detail, '', '/detail');
+    window.dispatchEvent(new window.PopStateEvent('popstate', { state: detail }));
+    assert.equal(engine.isPending(), false);
+    assert.deepEqual(delivered, ['/detail']);
+    assert.equal(el.scrollTop, 30);
+    assert.equal(engine.entries.get(home[HISTORY_KEY].id)?.scroll, 120);
+    assert.equal(callbacks.length, 1);
+    await callbacks[0]();
+    assert.deepEqual(delivered, ['/detail']);
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('a canonical trailing slash does not interrupt the destination transition', async () => {
+  const { engine, window } = setup();
+  let update: (() => Promise<void>) | undefined;
+  let skipped = false;
+  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() { skipped = true; } };
+  };
+  engine.options.animation = 'ios';
+  try {
+    engine.navigate('push', '/detail?q=1', () => window.history.pushState({}, '', '/detail/?q=1'));
+    const pending = update!();
+    engine.commit('/detail/?q=1');
+    assert.equal(engine.isPending(), false);
+    assert.equal(skipped, false);
+    await pending;
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('a redirected navigation settles and reflects the committed destination', async () => {
+  const { engine, window } = setup();
+  let update: (() => Promise<void>) | undefined;
+  let skipped = false;
+  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() { skipped = true; } };
+  };
+  engine.options.animation = 'ios';
+  try {
+    engine.navigate('push', '/account', () => window.history.pushState({}, '', '/login?returnTo=%2Faccount'));
+    const pending = update!();
+    engine.commit('/login?returnTo=%2Faccount');
+    assert.equal(engine.isPending(), false);
+    assert.equal(skipped, true);
+    assert.equal(engine.stack?.activities.find(activity => activity.isTop)?.params.url, '/login?returnTo=%2Faccount');
+    await pending;
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('a route that commits before the new navigation action leaves the new transition pending', async () => {
+  const { engine, window } = setup();
+  let update: (() => Promise<void>) | undefined;
+  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  engine.options.animation = 'ios';
+  try {
+    engine.navigate('push', '/latest', () => window.history.pushState({}, '', '/latest'));
+    window.history.pushState({}, '', '/earlier');
+    engine.commit('/earlier');
+    assert.equal(engine.isPending(), true);
+    const pending = update!();
+    engine.commit('/latest');
+    assert.equal(engine.isPending(), false);
+    await pending;
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('query motion survives a base path, browser history traversal and modal close by replace', async () => {
+  const win = new Window({ url: 'http://localhost/app/detail?city=seoul' });
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 8,
+  }, () => null, () => [], () => [], () => [], () => [
+    { href: '/detail?panel=map', animation: 'modal' },
+    { href: '/detail?panel=quiet', animation: 'none' },
+    { href: '/detail?panel=info', animation: 'ios' },
+  ]);
+  const motion: (string | undefined)[] = [];
+  let update: (() => Promise<void>) | undefined;
+  (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+    const {stackflowDirection, stackflowModal} = win.document.documentElement.dataset;
+    motion.push(stackflowModal ?? stackflowDirection);
+    update = callback;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  win.history.replaceState({ __NA: true }, '');
+  engine.connect();
+  try {
+    engine.commit('/detail?city=seoul');
+    assert.throws(() => engine.resolveHref('http://localhost/app//example.invalid'), TypeError);
+    const detail = win.history.state;
+    const map = '/detail?city=seoul&panel=map';
+    engine.navigate('push', map, () => win.history.pushState({ __NA: true }, '', '/app' + map));
+    let pending = update!();
+    engine.commit(map);
+    await pending;
+    const mapState = win.history.state;
+
+    const replace = Object.getPrototypeOf(win.history).replaceState;
+    for (const [path, state] of [['/detail?city=seoul', detail], [map, mapState]] as const) {
+      replace.call(win.history, state, '', '/app' + path);
+      win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
+      pending = update!();
+      engine.commit(path);
+      await pending;
+    }
+
+    engine.navigate('replace', '/detail?city=seoul', () => win.history.replaceState({ __NA: true }, '', '/app/detail?city=seoul'));
+    pending = update!();
+    engine.commit('/detail?city=seoul');
+    await pending;
+
+    engine.navigate('replace', '/detail?panel=info', () => win.history.replaceState({ __NA: true }, '', '/app/detail?panel=info'));
+    pending = update!();
+    engine.commit('/detail?panel=info');
+    await pending;
+
+    engine.navigate('push', '/detail?panel=quiet', () => win.history.pushState({ __NA: true }, '', '/app/detail?panel=quiet'));
+    engine.commit('/detail?panel=quiet');
+    assert.equal(engine.isPending(), false);
+    assert.deepEqual(motion, ['enter', 'exit', 'enter', 'exit', 'push']);
   } finally {
     engine.dispose();
   }
@@ -188,7 +354,7 @@ test('the slide waits for a visible loading boundary after the destination commi
   }
 });
 
-test('a skeleton route slides on its first commit with the loading boundary still visible', async () => {
+test('a query-selected skeleton route slides with the loading boundary still visible', async () => {
   const win = new Window({ url: 'http://localhost/' });
   const viewport = win.document.createElement('main');
   const loading = win.document.createElement('div');
@@ -197,7 +363,7 @@ test('a skeleton route slides on its first commit with the loading boundary stil
   const getViewport = () => viewport as unknown as HTMLElement;
   const engine = new NavigationEngine(win as unknown as globalThis.Window, getViewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3, waitForPage: true,
-  }, getViewport, () => [], () => [], () => ['/skeleton']);
+  }, getViewport, () => [], () => [], () => ['/skeleton?q=one']);
   let update: (() => Promise<void>) | undefined;
   (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
     update = callback;
@@ -205,12 +371,13 @@ test('a skeleton route slides on its first commit with the loading boundary stil
   };
   engine.connect();
   try {
-    engine.navigate('push', '/skeleton?q=one', () => {
-      win.history.pushState({}, '', '/skeleton?q=one');
+    const destination = '/skeleton?city=seoul&q=one';
+    engine.navigate('push', destination, () => {
+      win.history.pushState({}, '', destination);
       viewport.append(loading);
     });
     const pending = update!();
-    engine.commit('/skeleton?q=one');
+    engine.commit(destination);
     assert.equal(engine.isPending(), false);
     assert.equal(viewport.contains(loading), true);
     await pending;
@@ -239,7 +406,7 @@ test('modal routes rise on push and Forward and descend on Back', async () => {
     const opened = update!();
     engine.commit('/compose?draft=1');
     await opened;
-    assert.equal(engine.hasModalBackTransition(), true);
+    assert.equal(engine.usesNonInteractiveBack(), true);
     const modal = win.history.state;
     const replace = Object.getPrototypeOf(win.history).replaceState;
     for (const [path, state] of [['/', home], ['/compose?draft=1', modal]] as const) {

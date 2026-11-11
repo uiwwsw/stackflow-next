@@ -18,6 +18,7 @@ export function DemoHeader() {
 export function DemoFooter(){const router=useStackRouter();const stack=useStack();return <div className="demo-footer"><button onClick={()=>router.back()}>Back</button><span data-testid="stack-depth">스택 {stack?.activities.length??0}</span><button className="primary" onClick={()=>router.forward()}>Forward</button></div>;}
 const modalRoutes = ['/slow', '/skeleton'];
 const skeletonRoutes = ['/skeleton'];
+const transitionRoutes = [{href: '/detail?panel=map', animation: 'modal'}] as const;
 const subscribeToHydration = () => () => {};
 const hydrated = () => true;
 const notHydrated = () => false;
@@ -46,7 +47,7 @@ export function DemoFrame({children}: {children: ReactNode}) {
   const ready = useSyncExternalStore(subscribeToHydration, hydrated, notHydrated);
   return <>
     <div className="demo-frame" inert={!ready} data-demo-ready={ready ? '' : undefined}>
-      <StackflowProvider swipeBack modalRoutes={modalRoutes} skeletonRoutes={skeletonRoutes}
+      <StackflowProvider swipeBack modalRoutes={modalRoutes} skeletonRoutes={skeletonRoutes} transitionRoutes={transitionRoutes}
         header={<DemoHeader />} footer={<DemoFooter />} fixedTargets="[data-demo-fixed]" scrollTarget="[data-demo-scroll]">
         <div className="demo-page-shell">
           <div data-demo-scroll className="demo-scroll-body">{children}</div>
@@ -54,11 +55,24 @@ export function DemoFrame({children}: {children: ReactNode}) {
         </div>
       </StackflowProvider>
     </div>
-    <p className="demo-caption">‘대기’는 본문이 준비된 뒤, ‘스켈레톤’은 자리표시자가 준비되면 전환합니다.</p>
+    <p className="demo-caption">상세에서 지도 팝업을 열고 브라우저 뒤로·앞으로를 눌러 보세요. ‘대기’와 ‘스켈레톤’에서는 로딩 중 전환 시점을 비교할 수 있습니다.</p>
     <MotionStatus />
   </>;
 }
 export function ReplaceHome(){const router=useStackRouter();return <button className="secondary" onClick={()=>router.replace('/')}>목록으로 교체 · replace</button>;}
+
+export function CloseMap({href}: {href: string}) {
+  const router = useStackRouter();
+  const stack = useStack();
+  function close() {
+    const top = stack?.activities.find(activity => activity.isTop);
+    const previous = top && stack?.activities.find(activity => activity.zIndex === top.zIndex - 1)?.params.url;
+    const detail = window.location.pathname + new URL(href, window.location.origin).search;
+    if (previous === detail) router.back();
+    else router.replace(href);
+  }
+  return <button className="secondary" type="button" onClick={close}>지도 닫기</button>;
+}
 
 export function RetainedCounter(){const [count,setCount]=useState(0);return <button className="secondary" onClick={()=>setCount(n=>n+1)}>일반 useState 카운터: {count}</button>;}
 
