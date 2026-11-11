@@ -310,7 +310,7 @@ test('the slide waits for a visible loading boundary after the destination commi
   }
 });
 
-test('a skeleton route slides on its first commit with the loading boundary still visible', async () => {
+test('a query-selected skeleton route slides with the loading boundary still visible', async () => {
   const win = new Window({ url: 'http://localhost/' });
   const viewport = win.document.createElement('main');
   const loading = win.document.createElement('div');
@@ -319,7 +319,7 @@ test('a skeleton route slides on its first commit with the loading boundary stil
   const getViewport = () => viewport as unknown as HTMLElement;
   const engine = new NavigationEngine(win as unknown as globalThis.Window, getViewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3, waitForPage: true,
-  }, getViewport, () => [], () => [], () => ['/skeleton']);
+  }, getViewport, () => [], () => [], () => ['/skeleton?q=one']);
   let update: (() => Promise<void>) | undefined;
   (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
     update = callback;
@@ -327,12 +327,13 @@ test('a skeleton route slides on its first commit with the loading boundary stil
   };
   engine.connect();
   try {
-    engine.navigate('push', '/skeleton?q=one', () => {
-      win.history.pushState({}, '', '/skeleton?q=one');
+    const destination = '/skeleton?city=seoul&q=one';
+    engine.navigate('push', destination, () => {
+      win.history.pushState({}, '', destination);
       viewport.append(loading);
     });
     const pending = update!();
-    engine.commit('/skeleton?q=one');
+    engine.commit(destination);
     assert.equal(engine.isPending(), false);
     assert.equal(viewport.contains(loading), true);
     await pending;

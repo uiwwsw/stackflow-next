@@ -156,11 +156,15 @@ the popup content and its close control.
 ## Animate query-driven screens
 
 ```tsx
-<StackflowProvider transitionRoutes={[
-  { href: '/feed?panel=filters', animation: 'modal' },
-  { href: '/feed?panel=details', animation: 'ios' },
-  { href: '/feed?panel=inline', animation: 'none' },
-]}>
+<StackflowProvider
+  transitionRoutes={[
+    { href: '/feed?panel=filters', animation: 'modal' },
+    { href: '/feed?panel=details', animation: 'ios' },
+    { href: '/feed?panel=inline', animation: 'none' },
+  ]}
+  skeletonRoutes={['/feed?panel=details']}
+  fixedTargets={{ selector: '#header', exceptRoutes: ['/feed?panel=details'] }}
+>
   {children}
 </StackflowProvider>
 ```
@@ -173,8 +177,9 @@ disables animation when entering or leaving that route. Use `StackLink` or
 `replace()` can animate an explicit rule without adding an entry.
 
 `modalRoutes`, `skeletonRoutes`, and `fixedTargets.exceptRoutes` also accept
-pathnames with query pairs. Use application paths without the Next.js
-`basePath` prefix in these rules.
+pathnames with query pairs. In this example the details panel can slide in
+with its skeleton and the header slides with it. Use application paths without
+the Next.js `basePath` prefix in these rules.
 
 ## Choose which area scrolls
 

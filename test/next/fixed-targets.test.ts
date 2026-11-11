@@ -11,6 +11,14 @@ test('a route exception releases only its target in both directions', () => {
   assert.deepEqual(resolveFixedSelectors(targets, '/', '/checkout/history'), ['#header', '#player']);
 });
 
+test('a query exception applies only to matching entries and ignores other query pairs', () => {
+  const targets = [{ selector: '#header', exceptRoutes: ['/feed?panel=details&tag=day+trip'] }, '#player'];
+  const details = '/feed?tag=day%20trip&city=seoul&panel=details#top';
+  assert.deepEqual(resolveFixedSelectors(targets, '/feed', details), ['#player']);
+  assert.deepEqual(resolveFixedSelectors(targets, details, '/feed'), ['#player']);
+  assert.deepEqual(resolveFixedSelectors(targets, '/feed', '/feed?panel=details&tag=city'), ['#header', '#player']);
+});
+
 test('fixed targets stay in the DOM, ignore nested duplicates and release their transition markers', () => {
   const win = new Window();
   win.document.body.innerHTML = '<main><div class="fixed"><span class="fixed"></span></div><div class="fixed" hidden></div></main><div class="fixed"></div>';
