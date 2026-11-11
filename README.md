@@ -13,8 +13,9 @@ Install from npm.
 npm install @uiwwsw/stackflow-next
 ```
 
-See [npm](https://www.npmjs.com/package/@uiwwsw/stackflow-next) and the
-[live demo](https://stackflow-next.vercel.app).
+See [npm](https://www.npmjs.com/package/@uiwwsw/stackflow-next), the
+[official site](https://stackflow-next.vercel.app) and the
+[full-screen demo](https://stackflow-next.vercel.app/demo).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
 to `withStackflow` if you already have one. The integration needs no
