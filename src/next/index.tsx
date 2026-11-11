@@ -30,6 +30,8 @@ export interface StackflowProviderProps {
   scrollTarget?: string;
   /** CSS selectors for shared elements inside the page that should not slide. */
   fixedTargets?: FixedTarget | readonly FixedTarget[];
+  /** Exact pathnames presented as full-height modal pages. */
+  modalRoutes?: readonly string[];
   /** @deprecated Remove this prop. The full page is always the transition surface. */
   transitionTarget?: string;
   swipeBack?: boolean;
@@ -38,14 +40,16 @@ export interface StackflowProviderProps {
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
+  const modals = useRef<readonly string[]>([]);
   const indicator=useRef<HTMLDivElement>(null);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
   const engineRef=useRef<NavigationEngine | null>(null);
   const [engine,setEngine]=useState<NavigationEngine|null>(null);
   const router=useRouter();
+  useLayoutEffect(() => { modals.current = modalRoutes ?? []; }, [modalRoutes]);
   useLayoutEffect(() => {
     if (fixedTargets == null) fixed.current = [];
     else if (typeof fixedTargets === 'string' || 'selector' in fixedTargets) fixed.current = [fixedTargets];
@@ -67,7 +71,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
     const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries},
-      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current);
+      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current);
     const disconnect=value.connect(); engineRef.current=value; setEngine(value);
     return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
   },[animation,preserveScroll,maxEntries,navigationTimeout]);

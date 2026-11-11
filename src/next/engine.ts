@@ -1,5 +1,5 @@
 import { aggregate, makeEvent, type DomainEvent, type Stack } from '@stackflow/core';
-import { findFixedTargets, pinForTransition, resolveFixedSelectors, type FixedTarget } from './fixed-targets.js';
+import { findFixedTargets, pinForTransition, resolveFixedSelectors, routePathname, type FixedTarget } from './fixed-targets.js';
 
 export const HISTORY_KEY = '__stackflow_next_v1';
 export type Entry = { id: string; position: number; url: string; scroll: number; values: Map<string, unknown>; visual?: HTMLElement };
@@ -45,7 +45,21 @@ export class NavigationEngine {
     this.swipeBackEnabled = enabled;
     if (!enabled) for (const entry of this.entries.values()) delete entry.visual;
   }
-  previousVisual() { return [...this.entries.values()].find(e=>e.position===(this.current?.position??0)-1)?.visual; }
+  private previousEntry() { return [...this.entries.values()].find(entry => entry.position === (this.current?.position ?? 0) - 1); }
+  previousVisual() { return this.previousEntry()?.visual; }
+  private modalMotion(from: string, to: string) {
+    const source = routePathname(from);
+    const destination = routePathname(to);
+    const routes = this.modalRoutes().map(routePathname);
+    const wasModal = routes.includes(source);
+    const isModal = routes.includes(destination);
+    if (wasModal === isModal) return undefined;
+    return isModal ? 'enter' : 'exit';
+  }
+  hasModalBackTransition() {
+    const previous = this.previousEntry();
+    return previous !== undefined && this.modalMotion(this.current?.url ?? this.url(), previous.url) !== undefined;
+  }
   private saveVisual() {
     if (!this.swipeBackEnabled) return;
     const el=this.viewport();if(!this.current||!el)return;
@@ -57,7 +71,8 @@ export class NavigationEngine {
   constructor(readonly win: Window, readonly viewport: () => HTMLElement | null,
     readonly options: { animation: 'ios' | 'none'; preserveScroll: boolean; timeout: number; maxEntries: number },
     private readonly scrollElement = viewport,
-    private readonly fixedTargets: () => readonly FixedTarget[] = () => []) {}
+    private readonly fixedTargets: () => readonly FixedTarget[] = () => [],
+    private readonly modalRoutes: () => readonly string[] = () => []) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private emit() { this.listeners.forEach(fn => fn()); }
   private remember(meta: {id: string; position: number}, url: string) {
@@ -142,6 +157,7 @@ export class NavigationEngine {
       this.win.removeEventListener('popstate', pop, true);
       delete this.win.document.documentElement.dataset.stackflowDirection;
       delete this.win.document.documentElement.dataset.stackflowAnimating;
+      delete this.win.document.documentElement.dataset.stackflowModal;
       this.cleanup = null;
     };
     return this.cleanup;
@@ -188,6 +204,8 @@ export class NavigationEngine {
     this.clearPins();
     const { dataset } = this.win.document.documentElement;
     delete dataset.stackflowAnimating;
+    delete dataset.stackflowModal;
+    const modal = this.modalMotion(from, href ?? this.url());
     this.direction = direction; this.expected = href;
     this.win.document.documentElement.dataset.stackflowPending = 'true';
     this.win.document.documentElement.dataset.stackflowDirection = direction;
@@ -215,9 +233,9 @@ export class NavigationEngine {
       this.release();
       this.transition?.skipTransition();
     }, this.options.timeout);
-    if (direction !== 'replace' && doc.startViewTransition && !reduced && this.options.animation !== 'none') {
+    if ((direction !== 'replace' || modal) && doc.startViewTransition && !reduced && this.options.animation !== 'none') {
       const viewport = this.viewport();
-      const selectors = resolveFixedSelectors(this.fixedTargets(), from, href ?? this.url());
+      const selectors = modal ? [] : resolveFixedSelectors(this.fixedTargets(), from, href ?? this.url());
       if (viewport && selectors.length) {
         const targets = findFixedTargets(viewport, selectors);
         const css = doc.defaultView?.CSS;
@@ -230,6 +248,7 @@ export class NavigationEngine {
         this.pins = { ...pins, selectors };
       }
       this.transitionBounds = viewport?.getBoundingClientRect();
+      if (modal) dataset.stackflowModal = modal;
       dataset.stackflowAnimating = 'true';
       try {
         const transition = doc.startViewTransition(run); this.transition = transition;
@@ -247,8 +266,8 @@ export class NavigationEngine {
           };
         }
         transition.ready.catch(()=>{});
-        transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; } });
-      } catch { this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; void run().catch(()=>{}); }
+        transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; } });
+      } catch { this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; void run().catch(()=>{}); }
     } else { void run().catch(()=>{}); }
   }
   navigate(direction: Direction, href: string | null, action: () => void) {

@@ -13,8 +13,8 @@ Install the current prerelease from npm.
 npm install @uiwwsw/stackflow-next@next
 ```
 
-The `next` tag currently points to `0.2.0-alpha.10`. See the
-[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.10)
+The `next` tag currently points to `0.2.0-alpha.11`. See the
+[npm package](https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/0.2.0-alpha.11)
 and [live demo](https://stackflow-next.vercel.app/).
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
@@ -115,8 +115,10 @@ the provider body and give its selector an `exceptRoutes` list:
 </StackflowProvider>
 ```
 
-The header slides when entering or leaving `/checkout`, including Back and
-Forward. It stays still between other routes when its DOM node and bounds stay
+Declare the rule once on the shared provider. If `/checkout` renders without
+the header, the header slides out on entry and returns with the previous page
+on Back. Forward applies the same route exception. The header stays still
+between other routes when its DOM node and bounds stay
 the same. Exceptions match exact pathnames, ignoring query strings, fragments,
 and trailing slashes. The app renders the header appropriate to the current
 route. Mix exception rules and plain selectors in an array to control each
@@ -127,6 +129,29 @@ that prop. Restore the bounded-height provider layout shown above under Install
 and configure. Leave `fixedTargets` out to slide the entire page, or use it to
 keep specific shared elements still. The old prop is ignored and logs a migration
 warning in development.
+
+## Open full-height modal pages
+
+List the modal pathnames on your shared provider. The modal slides up when
+opened and down when leaving, including through browser Back and Forward.
+
+```tsx
+<StackflowProvider modalRoutes={['/compose', '/filters']}>
+  {children}
+</StackflowProvider>
+```
+
+Open with `StackLink` or `useStackRouter().push()` and close with
+`useStackRouter().back()`. Each path matches exactly, ignoring query strings,
+fragments, and trailing slashes. Motion applies to the provider's content area.
+For a viewport-sized popup, give the provider a viewport height and render the
+UI to cover its content area. Shared `header`, `footer`, and `persistent` slots
+sit outside that area. Elements inside the content area participate in the
+modal transition, including elements configured in `fixedTargets`.
+
+Direct loads render immediately, and navigation between two modal routes uses
+the regular horizontal slide. This option controls route motion. The app owns
+the popup content and its close control.
 
 ## Choose which area scrolls
 
