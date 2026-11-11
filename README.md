@@ -83,7 +83,35 @@ export function Actions() {
 - Control selection, callout and tap-highlight styling is scoped to controls;
   editable fields and `data-selectable` retain selection.
 
-## Choose which area scrolls
+## Keep an existing layout
+
+If your app already has sticky or fixed UI and an existing scroll region, pass
+`transitionTarget` to use that layout without rendering any provider wrappers.
+Select a single visible element that stays mounted in the shared layout.
+
+```tsx
+<StackflowProvider transitionTarget="[data-app-screen]" scrollTarget="[data-app-scroll]">
+  <AppHeader />
+  <main data-app-screen>
+    <section data-app-scroll className="existing-scroll-region">{children}</section>
+  </main>
+  <MiniPlayer />
+</StackflowProvider>
+```
+
+The optional `scrollTarget` observes an existing element with `overflow-y: auto`
+or `scroll`; it adds a visual indicator and restores the offset without changing
+the element's CSS or hiding its native scrollbar. Omit it to keep Next's document
+scroll behavior. Use `StackLink` or `useStackRouter` for animated navigation.
+
+Browsers with element-scoped View Transitions animate the selected region.
+If the API is unavailable or the selector does not uniquely match, navigation
+continues normally. The selected node should contain the moving content only;
+place controls that must remain live outside it. The provider's `header`,
+`footer`, `persistent`, `className`, `style` and interactive `swipeBack` options
+apply to the default wrapper and are not used with `transitionTarget`.
+
+## Choose which area scrolls in the default wrapper
 
 By default, the provider body scrolls. Use `scrollTarget` to delegate scrolling,
 the indicator, and scroll restoration to one visible HTML element inside it.
