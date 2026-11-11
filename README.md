@@ -98,9 +98,9 @@ inside it, pass one CSS selector or an array to `fixedTargets`:
 
 Place shared targets in the layout so the same elements remain mounted and keep
 the same bounds across routes. The option does not change their CSS positioning.
-If a selected element moves, is replaced, is clipped by the viewport, or the
-browser cannot fit it in the page capture, navigation skips the slide. A browser
-with View Transitions but without fixed-target isolation slides the whole page.
+If a pinned element moves or is replaced during capture, navigation skips the
+slide. A clipped target or a browser without fixed-target isolation uses the
+whole-page slide.
 With `fixedTargets` configured, an edge swipe triggers Back on release without
 dragging the live page. Existing `header`, `footer`, and `persistent` slots remain
 outside the slide automatically.

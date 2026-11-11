@@ -562,6 +562,49 @@ test('Back keeps sliding when the previous page brings back a fixed navigation b
   }
 });
 
+test('Back captures the whole page when an outgoing fixed target is clipped', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const content = win.document.createElement('main');
+  const nav = win.document.createElement('nav');
+  content.getBoundingClientRect = () => new win.DOMRect(0, 0, 400, 600);
+  nav.getBoundingClientRect = () => new win.DOMRect(0, -20, 400, 40);
+  Object.defineProperty(nav, 'getClientRects', { value: () => ({ length: 1 }) });
+  const viewport = () => content as unknown as HTMLElement;
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, viewport, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
+  }, viewport, () => ['nav']);
+  win.history.replaceState({ __NA: true }, '');
+  engine.connect();
+  try {
+    const home = win.history.state;
+    win.history.pushState({ __NA: true }, '', '/checkout');
+    engine.commit('/checkout');
+
+    content.append(nav);
+    Object.defineProperty(win, 'CSS', { value: { supports: () => true } });
+    let capture: (() => Promise<void>) | undefined;
+    let skipped = false;
+    (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+      capture = callback;
+      return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() { skipped = true; } };
+    };
+    win.addEventListener('popstate', () => {
+      engine.commit('/');
+    });
+
+    Object.getPrototypeOf(win.history).replaceState.call(win.history, home, '', '/');
+    win.dispatchEvent(new win.PopStateEvent('popstate', { state: home }));
+    assert.ok(capture);
+    await capture();
+    assert.equal(engine.direction, 'pop');
+    assert.equal(nav.parentElement, content);
+    assert.equal(nav.hasAttribute('data-stackflow-fixed-target'), false);
+    assert.equal(skipped, false);
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('navigation without swipe back does not clone the previous screen', () => {
   const { engine, window, el } = setup();
   try {

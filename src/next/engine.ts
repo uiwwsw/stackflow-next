@@ -369,8 +369,7 @@ export class NavigationEngine {
         const css = doc.defaultView?.CSS;
         if (targets.size && css?.supports('view-transition-name', 'match-element') && css.supports('selector(::view-transition-group(.stackflow-fixed))')) {
           const pins = pinForTransition(viewport, targets);
-          if (!pins) { void run().catch(()=>{}); return; }
-          this.pins = { ...pins, selectors };
+          if (pins) this.pins = { ...pins, selectors };
         }
       }
       this.transitionBounds = viewport?.getBoundingClientRect();
