@@ -17,6 +17,12 @@ function useEngine() { const engine=useContext(Context); if(engine===undefined) 
 const noopSubscribe = () => () => {};
 const emptyStack = () => null;
 const defaultLoading = <span>Loading…</span>;
+const loadingMessages = new Map([
+  ['ko', '불러오는 중…'], ['ja', '読み込み中…'], ['zh', '正在加载…'],
+  ['es', 'Cargando…'], ['fr', 'Chargement…'], ['de', 'Wird geladen…'],
+  ['pt', 'Carregando…'], ['ar', 'جارٍ التحميل…'],
+]);
+
 const LoadingContext = createContext<ReactNode>(defaultLoading);
 
 /** Use in loading.tsx or a Suspense fallback for content that must be ready before the slide. */
@@ -59,10 +65,12 @@ export interface StackflowProviderProps {
   skeletonRoutes?: readonly SkeletonRoute[];
   /** Default content for StackLoading. Pass null for an invisible readiness marker. */
   loading?: ReactNode;
+  /** BCP 47 locale for the default loading message. */
+  locale?: string;
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,skeletonRoutes,loading=defaultLoading,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
   const modals = useRef<readonly string[]>([]);
@@ -109,7 +117,9 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     if(!swipeBack||!viewport.current)return;
     return attachSwipeBack(engine,viewport.current,()=>router.back());
   },[swipeBack,engine,router]);
-  return <Context.Provider value={engine}><LoadingContext.Provider value={loading}>
+  const message = locale && loadingMessages.get(locale.toLowerCase().split('-', 1)[0]);
+  const fallback = message ? <span lang={locale} dir="auto">{message}</span> : defaultLoading;
+  return <Context.Provider value={engine}><LoadingContext.Provider value={loading === undefined ? fallback : loading}>
     <div className={`stackflow-next ${className}`} style={style}>
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
