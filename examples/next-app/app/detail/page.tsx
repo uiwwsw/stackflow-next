@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { StackLink, StackLoading } from '@uiwwsw/stackflow-next';
-import { DraftForm, ReplaceHome } from '../demo-controls';
+import { CloseMap, DraftForm, ReplaceHome } from '../demo-controls';
 
 type DetailProps = { searchParams: Promise<{ city?: string; panel?: string }> };
 const cities = { seoul: 'Seoul', jeju: 'Jeju', busan: 'Busan' };
@@ -15,7 +15,7 @@ async function Detail({searchParams}: DetailProps) {
     return <article className="screen detail-screen">
       <h2>{title} 지도</h2>
       <div className={`detail-art ${cityKey}`}><span>{title}</span></div>
-      <StackLink className="stream-link" href={detailHref} replace>지도 닫기</StackLink>
+      <CloseMap href={detailHref} />
     </article>;
   }
 

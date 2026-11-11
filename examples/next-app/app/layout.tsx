@@ -31,7 +31,7 @@ export default function Layout({children}: {children: ReactNode}) {
         <h1>Next.js 경로 그대로, 앱처럼 이동.</h1>
         <p className="lead">브라우저 뒤로·앞으로로 전환 방향을 확인하세요. 목록의 메모와 스크롤 위치도 돌아옵니다.</p>
         <code className="install">npm install @uiwwsw/stackflow-next</code>
-        <a className="download-link" href="https://www.npmjs.com/package/@uiwwsw/stackflow-next/v/1.0.0">npm에서 1.0.0 보기</a>
+        <a className="download-link" href="https://www.npmjs.com/package/@uiwwsw/stackflow-next">npm 패키지 보기</a>
       </section>
       <section className="demo-area" aria-label="라이브 내비게이션 데모"><DemoFrame>{children}</DemoFrame></section>
     </main>

@@ -142,8 +142,9 @@ opened and down when leaving, including through browser Back and Forward.
 ```
 
 Open with `StackLink` or `useStackRouter().push()` and close with
-`useStackRouter().back()`. Each path matches exactly, ignoring query strings,
-fragments, and trailing slashes. Motion applies to the provider's content area.
+`useStackRouter().back()`. A pathname-only rule matches all queries on that
+path. A rule with query pairs requires those pairs. Fragments and trailing
+slashes do not affect the match. Motion applies to the provider's content area.
 For a viewport-sized popup, give the provider a viewport height and render the
 UI to cover its content area. Shared `header`, `footer`, and `persistent` slots
 sit outside that area. Elements inside the content area participate in the

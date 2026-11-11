@@ -10,7 +10,9 @@ type TransitionDocument = Document & { startViewTransition?: (update: () => Prom
 type NavigationWindow = Window & { navigation?: { currentEntry?: { index: number } | null } };
 export function safeHref(href: string, base: string) {
   const url = new URL(href, base), origin = new URL(base).origin;
-  if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol)) throw new TypeError('Only same-origin HTTP(S) navigation is supported');
+  if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol) || url.pathname.startsWith('//')) {
+    throw new TypeError('Only same-origin HTTP(S) navigation is supported');
+  }
   return url.pathname + url.search + url.hash;
 }
 function routeKey(url: URL | Location) {
@@ -34,6 +36,7 @@ export class NavigationEngine {
   private waitForDestination = false;
   private historyIndex: number | undefined;
   private basePath: string | undefined;
+  private renderedRoute: string | null = null;
   private navigation: { expected: string | null; source: string; started: boolean } | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private transition: Transition | null = null;
@@ -118,7 +121,9 @@ export class NavigationEngine {
   resolveHref(href: string) {
     const origin = this.win.location.origin;
     const resolved = safeHref(href, origin + this.appHref(this.url()));
-    return href.startsWith('//') || URL.canParse(href) ? this.appHref(resolved) : resolved;
+    const destination = href.startsWith('//') || /^[a-z][a-z\d+.-]*:/i.test(href) ? this.appHref(resolved) : resolved;
+    if (destination.startsWith('//')) throw new TypeError('Only same-origin HTTP(S) navigation is supported');
+    return destination;
   }
   isCurrentRoute(href: string) {
     const origin = this.win.location.origin;
@@ -144,6 +149,7 @@ export class NavigationEngine {
     const initial = metadata(history.state) ?? this.fresh(0);
     replace.call(history, {...history.state, [HISTORY_KEY]: initial}, '', this.win.location.href);
     this.current = this.remember(initial, this.url());
+    this.renderedRoute = routeKey(this.win.location);
     this.historyIndex = this.readHistoryIndex();
     const oldRestoration = history.scrollRestoration;
     if (this.options.preserveScroll) history.scrollRestoration = 'manual';
@@ -172,9 +178,14 @@ export class NavigationEngine {
       if (event === replayedPop) return;
       const destination = engine.url();
       const from = engine.current?.url ?? destination;
-      const sameRoute = routeKey(new URL(from, engine.win.location.origin)) === routeKey(engine.win.location);
-      engine.capture();
-      if (!sameRoute) engine.saveVisual();
+      const destinationRoute = routeKey(engine.win.location);
+      const sourceRoute = routeKey(new URL(from, engine.win.location.origin));
+      const sameRoute = sourceRoute === destinationRoute;
+      const alreadyRendered = engine.renderedRoute === destinationRoute;
+      if (engine.renderedRoute === sourceRoute) {
+        engine.capture();
+        if (!sameRoute) engine.saveVisual();
+      }
       const state = event.state;
       const known = metadata(state);
       const index = engine.readHistoryIndex();
@@ -187,10 +198,10 @@ export class NavigationEngine {
       engine.current = engine.remember(meta, destination);
       const skipAnimation = engine.skipNextPopAnimation || event.hasUAVisualTransition;
       engine.skipNextPopAnimation = false;
-      if (sameRoute || skipAnimation) {
+      if (sameRoute || alreadyRendered || skipAnimation) {
         engine.cancelTransition();
-        if (sameRoute) {
-          if (from === destination) engine.restoreScroll();
+        if (alreadyRendered || sameRoute) {
+          if (!sameRoute || from === destination) engine.restoreScroll();
           engine.rebuild();
         }
         return;
@@ -403,6 +414,7 @@ export class NavigationEngine {
     const actual = routeKey(this.win.location);
     // Ignore layout effects belonging to the outgoing route.
     if (routeKey(observed) !== routeKey(new URL(this.appHref(this.url()), origin))) return;
+    this.renderedRoute = actual;
     const navigation = this.navigation;
     const redirected = navigation?.expected != null && navigation.expected !== actual;
     if (redirected && (!navigation.started || navigation.source === actual)) return;

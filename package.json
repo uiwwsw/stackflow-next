@@ -1,6 +1,6 @@
 {
   "name": "@uiwwsw/stackflow-next",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Stackflow navigation state and snapshot transitions for Next.js App Router",
   "exports": {
