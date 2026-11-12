@@ -1,5 +1,6 @@
 'use client';
-import { createContext, useContext, useState, type ComponentProps, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { StackLink, useStackRouter } from '@uiwwsw/stackflow-next';
@@ -34,17 +35,41 @@ function PlainBack() {
   </button>;
 }
 
+const noSubscribe = () => () => {};
+/** True when the app runs inside the comparison phones on the landing page. */
+function useEmbedded() {
+  return useSyncExternalStore(noSubscribe, () => window.self !== window.top, () => false);
+}
+
+/**
+ * The booking screen waits on a slow server. Stackflow Next keeps the current
+ * screen until it is ready, so the button says it is working meanwhile.
+ */
+export function BookLink({href, children}: {href: string; children: ReactNode}) {
+  const [pending, setPending] = useState(false);
+  // Runs when this screen is hidden or left, so the button is idle again on Back.
+  useEffect(() => () => setPending(false), []);
+  return <AppLink className="app-button" href={href} prefetch={false} aria-disabled={pending || undefined}
+    data-pending={pending || undefined}
+    onNavigate={() => flushSync(() => setPending(true))}>
+    {pending ? <><span className="app-spinner" aria-hidden="true" />불러오는 중</> : children}
+  </AppLink>;
+}
+
 export function AppHeader() {
   const mode = useMode();
   const path = usePathname();
   const local = path.slice(mode.length + 1) || '/';
   const root = local === '/' || local === '/saved';
   const other = mode === 'with' ? 'without' : 'with';
+  const label = mode === 'with' ? 'Stackflow Next 연동' : 'Next.js Link만 사용';
+  // Inside the comparison phones, switching versions would leave both phones on the same one.
+  const embedded = useEmbedded();
   return <header className="app-header">
     {root ? <span className="app-logo">머물곳</span> : mode === 'with' ? <StackBack /> : <PlainBack />}
-    <a className={`app-mode app-mode-${mode}`} href={`/${other}${local === '/' ? '' : local}`}>
-      {mode === 'with' ? 'Stackflow Next 연동' : 'Next.js Link만 사용'}
-    </a>
+    {embedded
+      ? <span className={`app-mode app-mode-${mode}`}>{label}</span>
+      : <a className={`app-mode app-mode-${mode}`} href={`/${other}${local === '/' ? '' : local}`}>{label}</a>}
   </header>;
 }
 

@@ -108,6 +108,16 @@
   background: var(--app-green); color: #fff; font-size: 15px; font-weight: 800; text-decoration: none; cursor: pointer;
 }
 .app-button:hover { background: #0f4129; }
+.app-button[data-pending] {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #3d6b55; pointer-events: none; cursor: progress;
+}
+.app-spinner {
+  width: 14px; height: 14px; border: 2px solid #ffffff66; border-top-color: #fff; border-radius: 50%;
+  animation: app-spin .7s linear infinite;
+}
+@keyframes app-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .app-spinner { animation: none; } }
 .app-button-wide { width: 100%; margin-top: 24px; padding-block: 15px; }
 
 .book-sheet { padding-top: 26px; }
