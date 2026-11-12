@@ -4,9 +4,31 @@
   "buildCommand": "npm run build && next build examples/next-app --webpack",
   "outputDirectory": "examples/next-app/.next",
   "redirects": [
-    { "source": "/detail", "destination": "/demo/detail", "permanent": true },
-    { "source": "/slow", "destination": "/demo/slow", "permanent": true },
-    { "source": "/skeleton", "destination": "/demo/skeleton", "permanent": true },
+    {
+      "source": "/demo",
+      "destination": "/with",
+      "permanent": true
+    },
+    {
+      "source": "/demo/:path*",
+      "destination": "/with",
+      "permanent": true
+    },
+    {
+      "source": "/detail",
+      "destination": "/with",
+      "permanent": true
+    },
+    {
+      "source": "/slow",
+      "destination": "/with",
+      "permanent": true
+    },
+    {
+      "source": "/skeleton",
+      "destination": "/with",
+      "permanent": true
+    },
     {
       "source": "/stackflow-next-0.2.0-alpha.2.tgz",
       "destination": "https://registry.npmjs.org/@uiwwsw/stackflow-next/-/stackflow-next-0.2.0-alpha.2.tgz",
