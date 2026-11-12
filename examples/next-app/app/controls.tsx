@@ -1,3 +1,0 @@
-'use client';
-import {StackLink,useStackRouter,useStackState,useStack} from '@uiwwsw/stackflow-next';
-export function Controls(){const [draft,setDraft]=useStackState('draft','');const router=useStackRouter();const stack=useStack();return <><label>Saved draft<input aria-label="Saved draft" value={draft} onChange={e=>setDraft(e.target.value)}/></label><nav><StackLink href="/detail">Open detail</StackLink><StackLink href="/slow">Open streaming page</StackLink><StackLink href="/?filter=one">Query one</StackLink><button onClick={()=>router.back()}>Back</button><button onClick={()=>router.forward()}>Forward</button><button onClick={()=>router.replace('/')}>Replace home</button></nav><p data-testid="stack-depth">Known stack: {stack?.activities.length??0}</p></>;}
