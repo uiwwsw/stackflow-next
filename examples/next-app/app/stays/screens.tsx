@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { amenities, findStay, reviews, savedIds, stays, won, type Stay } from './data';
-import { AppLink, GuestPicker, SaveButton, SearchBox } from './ui';
+import { AppLink, BookLink, GuestPicker, SaveButton, SearchBox } from './ui';
 import { RequestBooking } from './request-booking';
 
 export function StayArt({stay, large = false}: {stay: Stay; large?: boolean}) {
@@ -67,7 +67,7 @@ export async function StayScreen({params}: {params: Promise<{id: string}>}) {
     <p className="stay-note">{stay.region}. 정확한 주소는 예약 후 알려 드립니다.</p>
     <div className="stay-cta">
       <span><b>{won.format(stay.price)}원</b> 1박</span>
-      <AppLink className="app-button" href={`/stay/${stay.id}/book`} prefetch={false}>예약하기</AppLink>
+      <BookLink href={`/stay/${stay.id}/book`}>예약하기</BookLink>
     </div>
   </article>;
 }
