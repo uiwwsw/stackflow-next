@@ -7,6 +7,7 @@ export const HISTORY_KEY = '__stackflow_next_v1';
 const SWIPE_PREVIEW_DEPTH = 4;
 export type Entry = { id: string; position: number; url: string; scroll: number; values: Map<string, unknown>; visual?: HTMLElement };
 export type Direction = 'push' | 'pop' | 'replace';
+export type SlideDirection = Exclude<Direction, 'replace'>;
 export type RouteTransition = { href: string; animation: 'ios' | 'modal' | 'none' };
 type Transition = { finished: Promise<void>; ready: Promise<void>; skipTransition(): void };
 type TransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => Transition };
@@ -47,7 +48,7 @@ export class NavigationEngine {
   private historyIndex: number | undefined;
   private basePath: string | undefined;
   private renderedRoute: string | null = null;
-  private navigation: { expected: string | null; source: string; started: boolean } | null = null;
+  private navigation: { href: string | null; expected: string | null; source: string; started: boolean } | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private transition: Transition | null = null;
   private clearSlide: (() => void) | undefined;
@@ -193,6 +194,11 @@ export class NavigationEngine {
       replace.call(history, {...data, [HISTORY_KEY]: meta}, unused, url);
       engine.current = engine.remember(meta, engine.url());
       engine.historyIndex = engine.readHistoryIndex();
+      const navigation = engine.navigation;
+      // The route observer only tracks pathname and search parameters.
+      if (navigation?.started && navigation.expected === navigation.source && navigation.href === engine.url()) {
+        engine.commit(engine.appHref(navigation.href));
+      }
     };
     history.pushState = wrappedPush; history.replaceState = wrappedReplace;
     const browserNavigation = (this.win as NavigationWindow).navigation;
@@ -362,8 +368,7 @@ export class NavigationEngine {
     if (!before || !this.transition) return;
     const after = this.viewport()?.getBoundingClientRect();
     // Skip the slide if the slots reflow or the page scrolls while it is running.
-    if (!after || Math.abs(before.top - after.top) > .5 || Math.abs(before.bottom - after.bottom) > .5 ||
-      (this.pins && !this.pins.stable(findFixedTargets(this.viewport(), this.pins.selectors)))) {
+    if (!after || Math.abs(before.top - after.top) > .5 || Math.abs(before.bottom - after.bottom) > .5) {
       this.clearTransitionBounds();
       this.transition.skipTransition();
     }
@@ -390,9 +395,12 @@ export class NavigationEngine {
     const { dataset } = this.win.document.documentElement;
     const destination = href ?? this.url();
     const { disabled, modal, animateReplace } = this.motion(from, destination);
+    const slideDirection = direction === 'replace' && animateReplace && routePathname(from) !== routePathname(destination)
+      ? 'push' : direction;
     this.direction = direction;
     const origin = this.win.location.origin;
     const navigation = {
+      href,
       expected: href ? routeKey(new URL(href, origin)) : null,
       source: routeKey(new URL(from, origin)),
       started: false,
@@ -400,7 +408,7 @@ export class NavigationEngine {
     this.navigation = navigation;
     this.waitForDestination = !!this.options.waitForPage && !this.matchesSkeletonRoute(this.appHref(destination));
     dataset.stackflowPending = 'true';
-    dataset.stackflowDirection = direction === 'replace' && animateReplace ? 'push' : direction;
+    dataset.stackflowDirection = slideDirection;
     const doc = this.win.document as TransitionDocument;
     const generation = this.generation;
     let rejectPending: (error: unknown) => void = () => {};
@@ -419,9 +427,9 @@ export class NavigationEngine {
       try { action(); } catch (error) { rejectPending(error); this.release(); }
       return pending;
     };
-    const animate = !disabled && (direction !== 'replace' || animateReplace) && this.canAnimate();
+    const animate = !disabled && slideDirection !== 'replace' && this.canAnimate();
     const viewport = this.viewport();
-    const slide = preparedSlide ?? (animate && viewport ? captureSlide(viewport, this.scrollElement(), direction, modal) : undefined);
+    const slide = preparedSlide ?? (animate && viewport ? captureSlide(viewport, this.scrollElement(), slideDirection, modal) : undefined);
     this.clearSlide = slide?.dispose;
     // Native snapshots have a finite lifetime. Keep the outgoing visual if
     // that lifetime ends before Next has streamed and committed the page.
@@ -445,7 +453,7 @@ export class NavigationEngine {
       if (viewport && selectors.length) {
         const targets = findFixedTargets(viewport, selectors);
         const css = doc.defaultView?.CSS;
-        if (targets.size && css?.supports('view-transition-name', 'match-element') && css.supports('selector(::view-transition-group(.stackflow-fixed))')) {
+        if (targets.size && css?.supports('selector(::view-transition-group(.stackflow-fixed))')) {
           const pins = pinForTransition(viewport, targets);
           if (pins) this.pins = { ...pins, selectors };
         }
@@ -454,12 +462,16 @@ export class NavigationEngine {
       if (modal) dataset.stackflowModal = modal;
       dataset.stackflowAnimating = 'true';
       try {
-        const transition = doc.startViewTransition!(run); this.transition = transition;
+        const transition = doc.startViewTransition!(() => run().then(() => {
+          if (this.disconnected || generation !== this.generation || !this.pins) return;
+          const { selectors, captureDestination } = this.pins;
+          if (!captureDestination(findFixedTargets(this.viewport(), selectors))) this.transition?.skipTransition();
+        }));
+        this.transition = transition;
         if (viewport) {
           const Observer = doc.defaultView?.ResizeObserver;
           const observer = Observer ? new Observer(this.checkTransitionBounds) : undefined;
           observer?.observe(viewport);
-          if (this.pins) for (const element of findFixedTargets(viewport, selectors)) observer?.observe(element);
           const frame = viewport.parentElement?.parentElement;
           if (frame) for (const slot of frame.children) observer?.observe(slot);
           this.win.addEventListener('scroll', this.checkTransitionBounds, { passive: true });
@@ -485,12 +497,13 @@ export class NavigationEngine {
       void run().catch(() => {});
     }
   }
-  navigate(direction: Direction, href: string | null, action: () => void) {
+  navigate(direction: Direction, href: string | null, action: () => void, replaceDirection?: SlideDirection) {
     // Traversals are animated once, by the popstate observer.
     if (href === null) { action(); return; }
     const destination = (this.basePath ?? '') + this.resolveHref(href);
-    if (routeKey(new URL(destination, this.win.location.origin)) === routeKey(this.win.location)) { action(); return; }
-    this.capture(); this.saveVisual(); this.begin(direction, destination, action);
+    const sameRoute = routeKey(new URL(destination, this.win.location.origin)) === routeKey(this.win.location);
+    if (sameRoute && (!replaceDirection || destination === this.url())) { action(); return; }
+    this.capture(); this.saveVisual(); this.begin(replaceDirection ?? direction, destination, action);
   }
   commit(route: string) {
     if (this.disconnected) return;

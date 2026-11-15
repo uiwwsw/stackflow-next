@@ -21,6 +21,46 @@ test('browser forward branch is discarded by a new push; null state is retained'
 test('cancelled snapshot callback cannot execute an obsolete navigation',async()=>{const {engine,window}=setup();const callbacks:Array<()=>Promise<void>>=[];(window.document as any).startViewTransition=(callback:any)=>{callbacks.push(callback);return {ready:Promise.resolve(),finished:Promise.resolve(),skipTransition(){}};};engine.options.animation='ios';let route='';engine.navigate('push','/a',()=>{route='a';});engine.navigate('push','/b',()=>{route='b';});await callbacks[0]();assert.equal(route,'');const pending=callbacks[1]();assert.equal(route,'b');engine.dispose();await pending;});
 test('a pop route committing before the browser snapshot callback never waits for timeout',async()=>{const {engine,window}=setup();let callback:(()=>Promise<void>)|undefined;(window.document as any).startViewTransition=(fn:any)=>{callback=fn;return {ready:Promise.resolve(),finished:Promise.resolve(),skipTransition(){}};};engine.options.animation='ios';engine.begin('pop','/',()=>{});engine.commit('/');await Promise.race([callback!(),new Promise((_,reject)=>setTimeout(()=>reject(Error('snapshot completion gate registered too late')),10))]);engine.dispose();});
 
+test('replace directions animate without adding entries and plain query or hash replacements stay still', async () => {
+  const win = new Window({ url: 'http://localhost/app/detail' });
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 8,
+  }, () => null, () => [], () => [], () => false, () => [{ href: '/detail', animation: 'ios' }]);
+  const directions: (string | undefined)[] = [];
+  let capture: (() => Promise<void>) | undefined;
+  (win.document as any).startViewTransition = (update: () => Promise<void>) => {
+    directions.push(win.document.documentElement.dataset.stackflowDirection);
+    capture = update;
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  engine.connect();
+  try {
+    engine.commit('/detail');
+    const entry = win.history.state[HISTORY_KEY];
+    const replace = (href: string, direction?: 'push' | 'pop') => engine.navigate('replace', href, () => {
+      win.history.replaceState({}, '', '/app' + href);
+    }, direction);
+    replace('/detail?step=2');
+    engine.commit('/detail?step=2');
+    replace('/detail?step=2#top');
+    assert.deepEqual(directions, []);
+
+    replace('/detail?step=2#bottom', 'pop');
+    await capture!(); // Hash-only replacements have no RouteObserver commit.
+    assert.equal(engine.isPending(), false);
+    replace('/detail?step=3', 'push');
+    const pending = capture!();
+    engine.commit('/detail?step=3');
+    await pending;
+    assert.deepEqual(directions, ['pop', 'push']);
+    assert.deepEqual(win.history.state[HISTORY_KEY], entry);
+    assert.equal(engine.entries.size, 1);
+    assert.equal(engine.current?.url, '/app/detail?step=3');
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('a route commit accepts equivalent URL and search parameter encodings', () => {
   const { engine, window } = setup();
   try {
@@ -630,6 +670,68 @@ test('modal routes rise on push and Forward and descend on Back', async () => {
       await pending;
     }
     assert.deepEqual(motions, ['enter', 'exit', 'enter']);
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('a keyed fixed bar joins both snapshots after the destination finishes loading', async () => {
+  const win = new Window({ url: 'http://localhost/' });
+  const content = win.document.createElement('main');
+  const makeBar = () => {
+    const nav = win.document.createElement('nav');
+    nav.setAttribute('data-stackflow-fixed-key', 'bottom-bar');
+    nav.getBoundingClientRect = () => new win.DOMRect(0, 560, 400, 40);
+    Object.defineProperty(nav, 'getClientRects', { value: () => ({ length: 1 }) });
+    return nav;
+  };
+  const source = makeBar();
+  const destination = makeBar();
+  const loading = win.document.createElement('div');
+  loading.setAttribute('data-stackflow-loading', '');
+  Object.defineProperty(loading, 'getClientRects', { value: () => ({ length: 1 }) });
+  source.style.setProperty('view-transition-name', 'source-name', 'important');
+  destination.style.setProperty('view-transition-name', 'destination-name');
+  content.getBoundingClientRect = () => new win.DOMRect(0, 0, 400, 600);
+  content.append(source);
+  win.document.body.append(content);
+  Object.defineProperty(win, 'CSS', { value: { supports: () => true } });
+  const viewport = () => content as unknown as HTMLElement;
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, viewport, {
+    animation: 'ios', preserveScroll: true, timeout: 500, maxEntries: 3, waitForPage: true,
+  }, viewport, () => ['nav']);
+  const name = (element: typeof source) => element.style.getPropertyValue('view-transition-name');
+  let capture: (() => Promise<void>) | undefined;
+  let finish!: () => void;
+  const finished = new Promise<void>(resolve => { finish = resolve; });
+  let skipped = false;
+  (win.document as any).startViewTransition = (update: () => Promise<void>) => {
+    capture = update;
+    return { ready: Promise.resolve(), finished, skipTransition() { skipped = true; } };
+  };
+  engine.connect();
+  try {
+    engine.navigate('push', '/orders', () => {
+      win.history.pushState({}, '', '/orders');
+      content.replaceChildren(loading);
+      engine.commit('/orders');
+    });
+    const outgoingName = name(source);
+    assert.match(outgoingName, /^stackflow-next-fixed-/);
+    const pending = capture!();
+    assert.equal(engine.isPending(), true);
+    assert.equal(skipped, false);
+    loading.replaceWith(destination);
+    await pending;
+    assert.equal(skipped, false);
+    assert.equal(name(destination), outgoingName);
+    assert.equal(name(source), 'source-name');
+    assert.equal(source.style.getPropertyPriority('view-transition-name'), 'important');
+    finish();
+    await finished;
+    await Promise.resolve();
+    assert.equal(name(destination), 'destination-name');
+    for (const bar of [source, destination]) assert.equal(bar.hasAttribute('data-stackflow-fixed-target'), false);
   } finally {
     engine.dispose();
   }

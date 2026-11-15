@@ -2,7 +2,7 @@
 import { createContext, Suspense, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import Link, { type LinkProps } from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { NavigationEngine, safeHref, type RouteTransition } from './engine.js';
+import { NavigationEngine, safeHref, type RouteTransition, type SlideDirection } from './engine.js';
 import { attachSwipeBack } from './swipe.js';
 import { attachScrollViewport } from './scroll.js';
 import type { FixedTarget } from './fixed-targets.js';
@@ -132,7 +132,12 @@ export function useStackRouter() {
   const engine=useEngine(),router=useRouter();
   return useMemo(()=>({
     push(href:string){const destination=engine?.resolveHref(href) ?? safeHref(href,window.location.href);if(engine)engine.navigate('push',href,()=>router.push(destination,{scroll:false}));else router.push(destination,{scroll:false});},
-    replace(href:string){const destination=engine?.resolveHref(href) ?? safeHref(href,window.location.href);if(engine)engine.navigate('replace',href,()=>router.replace(destination,{scroll:false}));else router.replace(destination,{scroll:false});},
+    replace(href: string, direction?: SlideDirection) {
+      const destination = engine?.resolveHref(href) ?? safeHref(href, window.location.href);
+      const replace = () => router.replace(destination, { scroll: false });
+      if (engine) engine.navigate('replace', href, replace, direction);
+      else replace();
+    },
     back(){if(engine)engine.navigate('pop',null,()=>router.back());else router.back();},
     forward(){if(engine)engine.navigate('push',null,()=>router.forward());else router.forward();},
     prefetch:router.prefetch, refresh:router.refresh,

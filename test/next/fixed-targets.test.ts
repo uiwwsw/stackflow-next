@@ -19,6 +19,20 @@ test('legacy query exceptions do not release fixed targets', () => {
   assert.deepEqual(resolveFixedSelectors(targets, '/feed', '/feed?panel=details&tag=city'), ['#header', '#player']);
 });
 
+test('regexp exceptions match either pathname and callbacks match ordered app URLs', () => {
+  const pattern = /^\/orders(?:\/|$)/g;
+  pattern.lastIndex = 3;
+  const targets = [
+    { selector: '#header', exceptRoutes: [pattern] },
+    { selector: '#bar', exceptTransition: (from: string, to: string) => from === '/' && to === '/half?size=m#menu' },
+  ];
+  assert.deepEqual(resolveFixedSelectors(targets, '/orders/123/?status=open', '/'), ['#bar']);
+  assert.deepEqual(resolveFixedSelectors(targets, '/', '/orders/#latest'), ['#bar']);
+  assert.equal(pattern.lastIndex, 3);
+  assert.deepEqual(resolveFixedSelectors(targets, '/', '/half?size=m#menu'), ['#header']);
+  assert.deepEqual(resolveFixedSelectors(targets, '/half?size=m#menu', '/'), ['#header', '#bar']);
+});
+
 test('fixed targets stay in the DOM, ignore nested duplicates and release their transition markers', () => {
   const win = new Window();
   win.document.body.innerHTML = '<main><div class="fixed"><span class="fixed"></span></div><div class="fixed" hidden></div></main><div class="fixed"></div>';
@@ -35,9 +49,9 @@ test('fixed targets stay in the DOM, ignore nested duplicates and release their 
   const pin = pinForTransition(content, targets)!;
   assert.equal(target.parentElement, root);
   assert.equal(target.hasAttribute('data-stackflow-fixed-target'), true);
-  assert.equal(pin.stable(targets), true);
+  assert.equal(pin.captureDestination(targets), true);
   target.getBoundingClientRect = () => new win.DOMRect(0, 10, 100, 24);
-  assert.equal(pin.stable(targets), false);
+  assert.equal(pin.captureDestination(targets), false);
   pin.dispose();
   assert.equal(target.hasAttribute('data-stackflow-fixed-target'), false);
 });

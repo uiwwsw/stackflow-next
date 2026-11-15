@@ -80,7 +80,10 @@ export function Actions() {
   Back/Forward play the stack transition. Push and pop slide horizontally
   in opposite directions. If the viewport changes height before the browser
   snapshot is ready, Stackflow can play the slide with the saved outgoing screen.
-  By default, replace switches directly.
+  By default, replace switches directly. Use `replace(href, 'push')` or
+  `replace(href, 'pop')` to slide in that direction while replacing the current
+  history entry. With no direction, changes to only the query or hash switch
+  directly even when the route has an animation override.
 - Native scrolling remains active. Its hidden scrollbar is replaced by a visual,
   non-draggable indicator confined below the header and above the footer.
 - Control selection, callout and tap-highlight styling is scoped to controls;
@@ -99,11 +102,14 @@ inside it, pass one CSS selector or an array to `fixedTargets`:
 </StackflowProvider>
 ```
 
-Place shared targets in the layout so the same elements remain mounted and keep
-the same bounds across routes. The option does not change their CSS positioning.
-If a pinned element moves or is replaced during capture, navigation skips the
-slide. A clipped target or a browser without fixed-target isolation uses the
-whole-page slide.
+Keep shared targets at the same bounds across routes. When different layouts
+render their own header or bar, select both with `fixedTargets` and give each
+instance the same `data-stackflow-fixed-key`, for example
+`<nav data-stackflow-fixed-key="bottom-bar">`. Use a unique key per visible
+target. If the destination snapshot has no matching target yet, the outgoing
+snapshot stays visible during the slide. A change to a matched target's bounds
+can skip the slide. A clipped target or a browser without fixed-target isolation
+uses the whole-page slide.
 With `fixedTargets` configured, an edge swipe triggers Back on release without
 dragging the live page. Existing `header`, `footer`, and `persistent` slots remain
 outside the slide automatically.
@@ -121,10 +127,16 @@ the provider body and give its selector an `exceptRoutes` list:
 Declare the rule once on the shared provider. If `/checkout` renders without
 the header, the header slides out on entry and returns with the previous page
 on Back. Forward applies the same route exception. The header stays still
-between other routes when its DOM node and bounds stay
-the same. Exceptions match exact pathnames. The app renders the header appropriate to the current
-route. Mix exception rules and plain selectors in an array to control each
-element independently.
+between other routes when its identity and bounds stay the same. `exceptRoutes`
+accepts exact pathnames and regular expressions such as `/^\/orders(?:\/|$)/`.
+Both forms match the pathname on either side of the transition.
+
+For a one-way exception, pass an `exceptTransition(from, to)` callback from a
+Client Component. For example, `{ selector: '#bottom-bar', exceptTransition:
+(from, to) => from === '/' && to === '/half-and-half' }` lets the bar slide when
+opening `/half-and-half` from `/`. The callback receives app-relative URLs with
+query and hash when present. Mix exception rules and plain selectors in an
+array to control each element independently.
 
 If you installed `0.2.0-alpha.7` and used `transitionTarget`, upgrade and remove
 that prop. Restore the bounded-height provider layout shown above under Install
