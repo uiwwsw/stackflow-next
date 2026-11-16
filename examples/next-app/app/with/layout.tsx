@@ -10,7 +10,7 @@ const modalRoutes = stays.map(stay => `/with/stay/${stay.id}/book`);
 export default function WithLayout({children}: {children: ReactNode}) {
   return <ModeProvider mode="with">
     <div className="stays-app">
-      <StackflowProvider swipeBack locale="ko" modalRoutes={modalRoutes} header={<AppHeader />} footer={<TabBar />}>
+      <StackflowProvider swipeBack waitForPage locale="ko" modalRoutes={modalRoutes} header={<AppHeader />} footer={<TabBar />}>
         {children}
       </StackflowProvider>
     </div>

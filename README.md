@@ -301,6 +301,8 @@ Suspense to mark it as a readiness boundary. Unmarked Suspense boundaries can
 continue streaming. While waiting, shared `header`, `footer` and `persistent`
 slots remain interactive. Use `skeletonRoutes` with `waitForPage` to let selected
 destinations slide on their first render, including through Back and Forward.
+Before 2.2.0, `waitForPage` defaulted to `true`. Add the prop when you upgrade
+to keep the earlier behavior.
 
 ```tsx
 <StackflowProvider
