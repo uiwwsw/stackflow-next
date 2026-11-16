@@ -4,16 +4,14 @@
   --stackflow-slide-x:100% 0;
   --stackflow-slide-y:0 100%;
 }
-.stackflow-next{display:flex;flex-direction:column;position:relative;min-height:0;height:100%;overflow:hidden;isolation:isolate}
+.stackflow-next{display:flex;flex-direction:column;position:relative;min-height:0;height:100%;overflow:clip;isolation:isolate}
 .stackflow-next,.stackflow-next-content,.stackflow-next-viewport{background-color:Canvas;background-image:linear-gradient(var(--stackflow-background,transparent),var(--stackflow-background,transparent))}
 .stackflow-next-content{height:100%}
-html[data-stackflow-animating] .stackflow-next-content{view-transition-name:stackflow-next-content}
-.stackflow-next-content,:where([data-stackflow-scroll-target]){overflow:auto;overscroll-behavior:contain;scrollbar-width:none}
-.stackflow-next-content::-webkit-scrollbar,[data-stackflow-scroll-target]::-webkit-scrollbar{display:none}
+html[data-stackflow-animating] .stackflow-next-content:not([data-stackflow-slide-staged]){view-transition-name:stackflow-next-content}
+.stackflow-next-content,:where([data-stackflow-scroll-target]){overflow:auto;overscroll-behavior:contain}
 .stackflow-next-content[data-stackflow-scroll-delegated]{overflow:clip}
 .stackflow-next :where(a,button,[role=button], [data-app-control]){-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;user-select:none}
 .stackflow-next :where(input,textarea,[contenteditable=true],[data-selectable]){user-select:text;-webkit-touch-callout:default}
-.stackflow-next-indicator{position:absolute;top:0;right:3px;width:3px;z-index:10;border-radius:3px;background:var(--stackflow-indicator,#8888);pointer-events:none;opacity:0;transition:opacity .15s}
 /* Only the body participates; fixed slots and the document stay live. */
 html[data-stackflow-animating]{view-transition-name:none}
 /* Keep browser-generated size/position interpolation off the horizontal slide. */
@@ -66,7 +64,7 @@ html[data-stackflow-direction][data-stackflow-modal=exit]::view-transition-new(s
   }
 }
 
-.stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:hidden}.stackflow-next-header,.stackflow-next-footer,.stackflow-next-persistent{flex:none}
+.stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:clip}.stackflow-next-header,.stackflow-next-footer,.stackflow-next-persistent{flex:none}
 /* Keep controls responsive while the browser paints the visual snapshot layer. */
 html[data-stackflow-direction]::view-transition{pointer-events:none}
 html[data-stackflow-direction]::view-transition-group(*),
@@ -82,6 +80,7 @@ html[data-stackflow-direction]::view-transition-new(*){pointer-events:none}
 .stackflow-next-content[data-stackflow-slide-snapshot]{
   position:absolute;inset:0;z-index:2;pointer-events:none;view-transition-name:none
 }
+.stackflow-next-content[data-stackflow-slide-staged]{visibility:hidden}
 .stackflow-next-content[data-stackflow-slide-snapshot=under]{z-index:0}
 .stackflow-next-content[data-stackflow-slide-incoming]{position:relative;z-index:1}
 .stackflow-next-content[data-stackflow-slide-snapshot=pop]{animation-name:stackflow-leave}

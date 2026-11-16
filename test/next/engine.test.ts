@@ -3,7 +3,15 @@ import assert from 'node:assert/strict';
 import {Window} from 'happy-dom';
 import {NavigationEngine,HISTORY_KEY,safeHref} from '../../src/next/engine.ts';
 import {createSkeletonRouteMatcher} from '../../src/next/skeleton-routes.ts';
-function setup(maxEntries=3){const window=new Window({url:'http://localhost/'});const el=window.document.createElement('main');const engine=new NavigationEngine(window as unknown as globalThis.Window,()=>el as unknown as HTMLElement,{animation:'none',preserveScroll:true,timeout:30,maxEntries});engine.connect();return {engine,window,el};}
+function mountViewport(win: Window) {
+  const frame = win.document.createElement('div');
+  const content = win.document.createElement('main');
+  content.className = 'stackflow-next-content';
+  frame.append(content);
+  win.document.body.append(frame);
+  return content as unknown as HTMLElement;
+}
+function setup(maxEntries=3){const window=new Window({url:'http://localhost/'});const el=mountViewport(window);const engine=new NavigationEngine(window as unknown as globalThis.Window,()=>el,{animation:'none',preserveScroll:true,timeout:30,maxEntries});engine.connect();return {engine,window,el};}
 test('rejects executable and ambiguous cross-origin destinations',()=>{
   for(const href of ['javascript:alert(1)','https://example.invalid','//example.invalid','http://localhost//example.invalid']) {
     assert.throws(()=>safeHref(href,'http://localhost/'));
@@ -15,15 +23,51 @@ test('per-entry state and scroll restore after pop with distinct repeated URLs',
 // Simulate a browser traversal: native replace bypasses our wrapper, then popstate.
 const original=Object.getPrototypeOf(window.history).replaceState;original.call(window.history,first,'','/');window.dispatchEvent(new window.PopStateEvent('popstate',{state:first}));engine.commit('/');assert.equal(engine.read('draft',''), 'hello');assert.equal(el.scrollTop,120);engine.dispose();});
 test('metadata and saved state cache remain bounded; disconnect restores methods',()=>{const {engine,window}=setup(2);const wrapped=window.history.pushState;for(let i=1;i<6;i++){window.history.pushState({},'',`/${i}`);engine.commit(`/${i}`);}assert.equal(engine.entries.size,2);engine.dispose();assert.notEqual(window.history.pushState,wrapped);});
-test('timeout releases pending browser snapshot; reduced-motion path skips snapshots',async()=>{const {engine}=setup();engine.navigate('push','/uncommitted',()=>{});await new Promise(r=>setTimeout(r,50));assert.equal((engine as any).finish,null);engine.dispose();});
+test('a navigation with no commit releases its pending state at the deadline', async () => {
+  const { engine } = setup();
+  engine.navigate('push', '/uncommitted', () => {});
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(engine.isPending(), false);
+  engine.dispose();
+});
 test('stale wrappers left beneath framework patches delegate without tagging twice',()=>{const {engine,window}=setup();const stale=window.history.pushState;window.history.pushState=function(...args){return stale.apply(window.history,args);};engine.dispose();const replacement=new NavigationEngine(window as unknown as globalThis.Window,()=>null,{animation:'none',preserveScroll:true,timeout:30,maxEntries:8});replacement.connect();window.history.pushState({__NA:true},'','/b');replacement.commit('/b');assert.equal(window.history.state[HISTORY_KEY].position,1);assert.equal(replacement.entries.size,2);replacement.dispose();});
 test('browser forward branch is discarded by a new push; null state is retained',()=>{const {engine,window}=setup(8);engine.write('nullable',null);assert.equal(engine.read('nullable','fallback'),null);window.history.pushState({},'','/b');engine.commit('/b');window.history.pushState({},'','/c');engine.commit('/c');const entry=[...engine.entries.values()].find(e=>e.url==='/b')!;Object.getPrototypeOf(window.history).replaceState.call(window.history,{[HISTORY_KEY]:{id:entry.id,position:entry.position}},'','/b');window.dispatchEvent(new window.PopStateEvent('popstate'));engine.commit('/b');window.history.pushState({},'','/d');engine.commit('/d');assert.equal([...engine.entries.values()].some(e=>e.url==='/c'),false);engine.dispose();});
-test('cancelled snapshot callback cannot execute an obsolete navigation',async()=>{const {engine,window}=setup();const callbacks:Array<()=>Promise<void>>=[];(window.document as any).startViewTransition=(callback:any)=>{callbacks.push(callback);return {ready:Promise.resolve(),finished:Promise.resolve(),skipTransition(){}};};engine.options.animation='ios';let route='';engine.navigate('push','/a',()=>{route='a';});engine.navigate('push','/b',()=>{route='b';});await callbacks[0]();assert.equal(route,'');const pending=callbacks[1]();assert.equal(route,'b');engine.dispose();await pending;});
-test('a pop route committing before the browser snapshot callback never waits for timeout',async()=>{const {engine,window}=setup();let callback:(()=>Promise<void>)|undefined;(window.document as any).startViewTransition=(fn:any)=>{callback=fn;return {ready:Promise.resolve(),finished:Promise.resolve(),skipTransition(){}};};engine.options.animation='ios';engine.begin('pop','/',()=>{});engine.commit('/');await Promise.race([callback!(),new Promise((_,reject)=>setTimeout(()=>reject(Error('snapshot completion gate registered too late')),10))]);engine.dispose();});
+test('navigation dispatches immediately and a superseded snapshot cannot reveal the next screen', () => {
+  const { engine, window, el } = setup();
+  const captures: Array<() => void> = [];
+  const dispatched: string[] = [];
+  (window.document as any).startViewTransition = (update: () => void) => {
+    captures.push(update);
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+  };
+  engine.options.animation = 'ios';
+  function visit(href: string) {
+    engine.navigate('push', href, () => {
+      dispatched.push(href);
+      window.history.pushState({}, '', href);
+    });
+  }
+  try {
+    visit('/a');
+    assert.deepEqual(dispatched, ['/a']);
+    assert.equal(captures.length, 0);
+    engine.commit('/a');
+    visit('/b');
+    assert.deepEqual(dispatched, ['/a', '/b']);
+    engine.commit('/b');
+    captures[0]();
+    assert.equal(el.hasAttribute('data-stackflow-slide-staged'), true);
+    captures[1]();
+    assert.equal(el.hasAttribute('data-stackflow-slide-staged'), false);
+  } finally {
+    engine.dispose();
+  }
+});
 
 test('replace directions animate without adding entries and plain query or hash replacements stay still', async () => {
   const win = new Window({ url: 'http://localhost/app/detail' });
-  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+  const viewport = mountViewport(win);
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => viewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 8,
   }, () => null, () => [], () => [], () => false, () => [{ href: '/detail', animation: 'ios' }]);
   const directions: (string | undefined)[] = [];
@@ -49,9 +93,8 @@ test('replace directions animate without adding entries and plain query or hash 
     await capture!(); // Hash-only replacements have no RouteObserver commit.
     assert.equal(engine.isPending(), false);
     replace('/detail?step=3', 'push');
-    const pending = capture!();
     engine.commit('/detail?step=3');
-    await pending;
+    await capture!();
     assert.deepEqual(directions, ['pop', 'push']);
     assert.deepEqual(win.history.state[HISTORY_KEY], entry);
     assert.equal(engine.entries.size, 1);
@@ -100,18 +143,16 @@ test('rapid Back then Forward animates the rendered route without waiting for an
     replace.call(window.history, home, '', '/');
     window.dispatchEvent(new window.PopStateEvent('popstate', { state: home }));
     assert.equal(engine.isPending(), true);
-    assert.deepEqual(delivered, []);
+    assert.deepEqual(delivered, ['/']);
+    assert.equal(callbacks.length, 0);
 
     replace.call(window.history, detail, '', '/detail');
     window.dispatchEvent(new window.PopStateEvent('popstate', { state: detail }));
-    assert.equal(engine.isPending(), true);
     assert.equal(engine.direction, 'push');
-    assert.equal(callbacks.length, 2);
+    assert.equal(callbacks.length, 1);
     await callbacks[0]();
-    assert.deepEqual(delivered, []);
-    await callbacks[1]();
     assert.equal(engine.isPending(), false);
-    assert.deepEqual(delivered, ['/detail']);
+    assert.deepEqual(delivered, ['/', '/detail']);
     assert.equal(el.scrollTop, 30);
     assert.equal(engine.entries.get(home[HISTORY_KEY].id)?.scroll, 120);
   } finally {
@@ -190,7 +231,8 @@ test('the Navigation API captures the outgoing screen before a browser traversal
 
 test('two quick Back events capture the rendered route when the intermediate entry has no animation', async () => {
   const win = new Window({ url: 'http://localhost/' });
-  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+  const viewport = mountViewport(win);
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => viewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
   }, () => null, () => [], () => [], () => false, () => [{ href: '/instant', animation: 'none' }]);
   const callbacks: Array<() => Promise<void>> = [];
@@ -219,14 +261,13 @@ test('two quick Back events capture the rendered route when the intermediate ent
     // The router has received the first event but still shows /detail.
     replace.call(win.history, home, '', '/');
     win.dispatchEvent(new win.PopStateEvent('popstate', { state: home }));
-    assert.deepEqual(delivered, ['/instant']);
-    assert.equal(callbacks.length, 1);
+    assert.deepEqual(delivered, ['/instant', '/']);
+    assert.equal(callbacks.length, 0);
     assert.equal(engine.direction, 'pop');
 
-    const pending = callbacks[0]();
-    assert.deepEqual(delivered, ['/instant', '/']);
     engine.commit('/');
-    await pending;
+    assert.equal(callbacks.length, 1);
+    await callbacks[0]();
     assert.equal(engine.isPending(), false);
   } finally {
     engine.dispose();
@@ -244,11 +285,10 @@ test('a canonical trailing slash does not interrupt the destination transition',
   engine.options.animation = 'ios';
   try {
     engine.navigate('push', '/detail?q=1', () => window.history.pushState({}, '', '/detail/?q=1'));
-    const pending = update!();
     engine.commit('/detail/?q=1');
     assert.equal(engine.isPending(), false);
     assert.equal(skipped, false);
-    await pending;
+    await update!();
   } finally {
     engine.dispose();
   }
@@ -265,34 +305,25 @@ test('a redirected navigation settles and reflects the committed destination', a
   engine.options.animation = 'ios';
   try {
     engine.navigate('push', '/account', () => window.history.pushState({}, '', '/login?returnTo=%2Faccount'));
-    const pending = update!();
     engine.commit('/login?returnTo=%2Faccount');
     assert.equal(engine.isPending(), false);
-    assert.equal(skipped, true);
+    assert.equal(skipped, false);
+    assert.equal(update, undefined);
     assert.equal(engine.stack?.activities.find(activity => activity.isTop)?.params.url, '/login?returnTo=%2Faccount');
-    await pending;
   } finally {
     engine.dispose();
   }
 });
 
-test('a route that commits before the new navigation action leaves the new transition pending', async () => {
+test('an outgoing route re-render cannot release the incoming navigation', () => {
   const { engine, window } = setup();
-  let update: (() => Promise<void>) | undefined;
-  (window.document as any).startViewTransition = (callback: () => Promise<void>) => {
-    update = callback;
-    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
-  };
-  engine.options.animation = 'ios';
   try {
-    engine.navigate('push', '/latest', () => window.history.pushState({}, '', '/latest'));
-    window.history.pushState({}, '', '/earlier');
-    engine.commit('/earlier');
+    engine.navigate('push', '/latest', () => {});
+    engine.commit('/');
     assert.equal(engine.isPending(), true);
-    const pending = update!();
+    window.history.pushState({}, '', '/latest');
     engine.commit('/latest');
     assert.equal(engine.isPending(), false);
-    await pending;
   } finally {
     engine.dispose();
   }
@@ -300,7 +331,8 @@ test('a route that commits before the new navigation action leaves the new trans
 
 test('query changes under a base path use ordinary history and ignore legacy query rules', async () => {
   const win = new Window({ url: 'http://localhost/app/detail?city=seoul' });
-  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+  const viewport = mountViewport(win);
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => viewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 8,
   }, () => null, () => [], () => [], () => false, () => [
     { href: '/detail?panel=map', animation: 'modal' },
@@ -323,9 +355,8 @@ test('query changes under a base path use ordinary history and ignore legacy que
     const detail = win.history.state;
     const map = '/detail?city=seoul&panel=map';
     engine.navigate('push', map, () => win.history.pushState({ __NA: true }, '', '/app' + map));
-    const opened = update!();
     engine.commit(map);
-    await opened;
+    await update!();
     assert.equal(engine.current?.url, '/app' + map);
     const mapState = win.history.state;
 
@@ -333,23 +364,20 @@ test('query changes under a base path use ordinary history and ignore legacy que
     for (const [path, state] of [['/detail?city=seoul', detail], [map, mapState]] as const) {
       replace.call(win.history, state, '', '/app' + path);
       win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
-      const pending = update!();
       engine.commit(path);
-      await pending;
+      await update!();
       assert.equal(engine.current?.url, '/app' + path);
     }
 
     const quiet = '/detail?panel=quiet';
     engine.navigate('push', quiet, () => win.history.pushState({ __NA: true }, '', '/app' + quiet));
-    const openedQuiet = update!();
     engine.commit(quiet);
-    await openedQuiet;
+    await update!();
 
     const editor = '/editor?draft=1';
     engine.navigate('replace', editor, () => win.history.replaceState({ __NA: true }, '', '/app' + editor));
-    const replaced = update!();
     engine.commit(editor);
-    await replaced;
+    await update!();
     assert.equal(engine.isPending(), false);
     assert.deepEqual(motion, ['push', 'pop', 'push', 'push', 'push']);
   } finally {
@@ -364,7 +392,8 @@ test('opening or reloading a page does not animate; in-app push, Back and Forwar
     directions.push(win.document.documentElement.dataset.stackflowDirection);
     return { ready: Promise.resolve(), finished: Promise.resolve().then(update), skipTransition() {} };
   };
-  const makeEngine = () => new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+  const viewport = mountViewport(win);
+  const makeEngine = () => new NavigationEngine(win as unknown as globalThis.Window, () => viewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
   });
   win.history.replaceState({ __NA: true }, '');
@@ -419,9 +448,8 @@ test('an aborted browser snapshot still delivers Back once without waiting for t
     };
     Object.getPrototypeOf(window.history).replaceState.call(window.history, home, '', '/');
     window.dispatchEvent(new window.PopStateEvent('popstate', { state: home }));
-    assert.equal(delivered, 0);
-    await Promise.resolve();
     assert.equal(delivered, 1);
+    assert.equal(callback, undefined);
     engine.commit('/');
     await callback!();
     assert.equal(delivered, 1);
@@ -431,9 +459,10 @@ test('an aborted browser snapshot still delivers Back once without waiting for t
   }
 });
 
-test('Next receives Back and Forward only after the outgoing snapshot is captured', async () => {
+test('Next receives Back and Forward immediately after cloning the outgoing view', async () => {
   const win = new Window({ url: 'http://localhost/' });
-  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+  const viewport = mountViewport(win);
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => viewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
   });
   const delivered: unknown[] = [];
@@ -455,25 +484,24 @@ test('Next receives Back and Forward only after the outgoing snapshot is capture
       const previousCount = delivered.length;
       replace.call(win.history, state, '', path);
       win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
-      assert.equal(delivered.length, previousCount);
-      assert.equal(engine.isPending(), true);
-      assert.equal(win.document.documentElement.dataset.stackflowDirection, direction);
-      const pending = capture!();
       assert.equal(delivered.length, previousCount + 1);
       assert.deepEqual(delivered.at(-1), state);
+      assert.equal(engine.isPending(), true);
+      assert.equal(win.document.documentElement.dataset.stackflowDirection, direction);
       engine.commit(path);
-      await pending;
+      await capture!();
     }
   } finally {
     engine.dispose();
   }
 });
 
-test('first Back replays Next state after capture even when the entry lacks Stackflow metadata', async () => {
+test('first Back delivers Next state even when the entry lacks Stackflow metadata', async () => {
   const win = new Window({ url: 'http://localhost/' });
   const navigation = { currentEntry: { index: 0 } };
   Object.defineProperty(win, 'navigation', { value: navigation });
-  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+  const viewport = mountViewport(win);
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => viewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
   });
   const initial = { __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: { tree: ['initial'] } };
@@ -496,10 +524,9 @@ test('first Back replays Next state after capture even when the entry lacks Stac
     replace.call(win.history, initial, '', '/');
     win.dispatchEvent(new win.PopStateEvent('popstate', { state: initial }));
     assert.equal(engine.direction, 'pop');
-    assert.equal(delivered.length, 0);
-    const back = update!();
+    assert.equal(delivered.length, 1);
     engine.commit('/');
-    await back;
+    await update!();
     assert.deepEqual(delivered, [initial]);
     assert.equal(engine.read('draft', ''), 'saved before the first push');
 
@@ -507,84 +534,100 @@ test('first Back replays Next state after capture even when the entry lacks Stac
     replace.call(win.history, detail, '', '/detail');
     win.dispatchEvent(new win.PopStateEvent('popstate', { state: detail }));
     assert.equal(engine.direction, 'push');
-    const forward = update!();
     engine.commit('/detail');
-    await forward;
+    await update!();
     assert.deepEqual(delivered, [initial, detail]);
   } finally {
     engine.dispose();
   }
 });
 
-test('the slide waits for a visible loading boundary after the destination commits', async () => {
-  const win = new Window({ url: 'http://localhost/' });
-  const content = win.document.createElement('main');
-  const loading = win.document.createElement('div');
+test('the default slides on the first commit even when StackLoading is visible', () => {
+  const { engine, window, el } = setup();
+  engine.options.animation = 'ios';
+  const loading = window.document.createElement('div');
   loading.setAttribute('data-stackflow-loading', '');
   Object.defineProperty(loading, 'getClientRects', { value: () => ({ length: 1 }) });
-  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => content as unknown as HTMLElement, {
-    animation: 'ios', preserveScroll: true, timeout: 500, maxEntries: 3, waitForPage: true,
-  });
-  let update: (() => Promise<void>) | undefined;
-  (win.document as any).startViewTransition = (callback: () => Promise<void>) => {
+  let update: (() => void) | undefined;
+  (window.document as any).startViewTransition = (callback: () => void) => {
     update = callback;
     return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
   };
-  engine.connect();
   try {
-    engine.navigate('push', '/slow', () => {
-      win.history.pushState({}, '', '/slow');
-      content.append(loading);
-    });
-    assert.equal(engine.isPending(), true);
-    const pending = update!();
+    engine.navigate('push', '/slow', () => window.history.pushState({}, '', '/slow'));
+    assert.equal(window.location.pathname, '/slow');
+    assert.equal(update, undefined);
+    assert.equal(el.hasAttribute('data-stackflow-slide-staged'), false);
+    el.append(loading as unknown as HTMLElement);
     engine.commit('/slow');
-    assert.equal(engine.isPending(), true);
-    loading.remove();
-    await pending;
     assert.equal(engine.isPending(), false);
+    assert.ok(update);
+    update();
+    assert.equal(el.hasAttribute('data-stackflow-slide-staged'), false);
+    assert.equal(el.contains(loading as unknown as HTMLElement), true);
   } finally {
     engine.dispose();
   }
 });
 
-test('a slow route keeps the outgoing visual past the native deadline and slides when ready', async () => {
+test('waitForPage stages the old body after commit without opening a browser snapshot', async () => {
   const { engine, window, el } = setup();
-  window.document.body.append(el);
+  engine.options.animation = 'ios';
+  engine.options.waitForPage = true;
   el.textContent = 'Outgoing page';
   const loading = window.document.createElement('div');
   loading.setAttribute('data-stackflow-loading', '');
   Object.defineProperty(loading, 'getClientRects', { value: () => ({ length: 1 }) });
-  engine.options.animation = 'ios';
-  engine.options.waitForPage = true;
-  let completeUpdate: Promise<void>;
-  let rejectSnapshot: (error: Error) => void = () => {};
-  const ready = new Promise<void>((_, reject) => { rejectSnapshot = reject; });
-  (window.document as any).startViewTransition = (update: () => Promise<void>) => {
-    completeUpdate = Promise.resolve().then(update);
-    return { ready, finished: new Promise(() => {}), skipTransition() { rejectSnapshot(new Error('Snapshot expired')); } };
+  let resolveCapture!: (update: () => void) => void;
+  const capture = new Promise<() => void>(resolve => { resolveCapture = resolve; });
+  let nativeCalls = 0;
+  (window.document as any).startViewTransition = (update: () => void) => {
+    nativeCalls++;
+    resolveCapture(update);
+    return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
   };
-
   try {
-    engine.navigate('push', '/slow', () => {
-      window.history.pushState({}, '', '/slow');
-      el.replaceChildren(loading);
-    });
-    await Promise.resolve();
+    engine.navigate('push', '/slow', () => window.history.pushState({}, '', '/slow'));
+    assert.equal(nativeCalls, 0);
+    el.replaceChildren(loading as unknown as HTMLElement);
     engine.commit('/slow');
-    await new Promise(resolve => setTimeout(resolve, 50));
     const snapshot = window.document.querySelector('[data-stackflow-slide-snapshot]');
     assert.equal(snapshot?.textContent, 'Outgoing page');
     assert.equal(engine.isPending(), true);
-    assert.equal(el.dataset.stackflowSlideIncoming, undefined);
-
+    assert.equal(nativeCalls, 0);
     loading.replaceWith('Destination page');
-    await completeUpdate!;
-    await Promise.resolve();
+    const update = await capture;
     assert.equal(engine.isPending(), false);
-    assert.equal(el.dataset.stackflowSlideIncoming, 'push');
-    el.dispatchEvent(new window.Event('animationend'));
+    update();
     assert.equal(snapshot?.isConnected, false);
+    assert.equal(el.hasAttribute('data-stackflow-slide-staged'), false);
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('the wait deadline reveals a committed loading screen', async () => {
+  const { engine, window, el } = setup();
+  engine.options.animation = 'ios';
+  engine.options.waitForPage = true;
+  const loading = window.document.createElement('div');
+  loading.setAttribute('data-stackflow-loading', '');
+  Object.defineProperty(loading, 'getClientRects', { value: () => ({ length: 1 }) });
+  const capture = new Promise<() => void>(resolve => {
+    (window.document as any).startViewTransition = (update: () => void) => {
+      resolve(update);
+      return { ready: Promise.resolve(), finished: new Promise(() => {}), skipTransition() {} };
+    };
+  });
+  try {
+    engine.navigate('push', '/slow', () => window.history.pushState({}, '', '/slow'));
+    el.append(loading as unknown as HTMLElement);
+    engine.commit('/slow');
+    assert.equal(engine.isPending(), true);
+    const update = await capture;
+    update();
+    assert.equal(engine.isPending(), false);
+    assert.equal(el.hasAttribute('data-stackflow-slide-staged'), false);
   } finally {
     engine.dispose();
   }
@@ -593,6 +636,7 @@ test('a slow route keeps the outgoing visual past the native deadline and slides
 test('literal and regex skeleton rules match the app pathname before releasing a loading boundary', async () => {
   const win = new Window({ url: 'http://localhost/shop' });
   const viewport = win.document.createElement('main');
+  win.document.body.append(viewport);
   const loading = win.document.createElement('div');
   loading.setAttribute('data-stackflow-loading', '');
   Object.defineProperty(loading, 'getClientRects', { value: () => ({ length: 1 }) });
@@ -625,12 +669,14 @@ test('literal and regex skeleton rules match the app pathname before releasing a
         win.history.pushState({}, '', `/shop${destination}`);
         viewport.append(loading);
       });
-      const pending = update!();
+      update = undefined;
       engine.commit(destination);
       assert.equal(engine.isPending(), !showsSkeleton, destination);
       assert.equal(viewport.contains(loading), true);
       loading.remove();
-      await pending;
+      if (!showsSkeleton) await new Promise(resolve => setTimeout(resolve, 10));
+      assert.ok(update, destination);
+      await update();
       assert.equal(engine.isPending(), false);
     }
     assert.equal(products.lastIndex, 5);
@@ -641,7 +687,8 @@ test('literal and regex skeleton rules match the app pathname before releasing a
 
 test('modal routes rise on push and Forward and descend on Back', async () => {
   const win = new Window({ url: 'http://localhost/' });
-  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => null, {
+  const viewport = mountViewport(win);
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => viewport, {
     animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 3,
   }, () => null, () => [], () => ['/compose']);
   const motions: (string | undefined)[] = [];
@@ -656,18 +703,16 @@ test('modal routes rise on push and Forward and descend on Back', async () => {
   try {
     const home = win.history.state;
     engine.navigate('push', '/compose?draft=1', () => win.history.pushState({ __NA: true }, '', '/compose?draft=1'));
-    const opened = update!();
     engine.commit('/compose?draft=1');
-    await opened;
+    await update!();
     assert.equal(engine.usesNonInteractiveBack(), true);
     const modal = win.history.state;
     const replace = Object.getPrototypeOf(win.history).replaceState;
     for (const [path, state] of [['/', home], ['/compose?draft=1', modal]] as const) {
       replace.call(win.history, state, '', path);
       win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
-      const pending = update!();
       engine.commit(path);
-      await pending;
+      await update!();
     }
     assert.deepEqual(motions, ['enter', 'exit', 'enter']);
   } finally {
@@ -716,13 +761,15 @@ test('a keyed fixed bar joins both snapshots after the destination finishes load
       content.replaceChildren(loading);
       engine.commit('/orders');
     });
-    const outgoingName = name(source);
-    assert.match(outgoingName, /^stackflow-next-fixed-/);
-    const pending = capture!();
+    assert.equal(capture, undefined);
     assert.equal(engine.isPending(), true);
     assert.equal(skipped, false);
     loading.replaceWith(destination);
-    await pending;
+    await new Promise(resolve => setTimeout(resolve, 10));
+    const clone = win.document.querySelector<HTMLElement>('[data-stackflow-slide-snapshot] nav')!;
+    const outgoingName = name(clone as unknown as typeof source);
+    assert.match(outgoingName, /^stackflow-next-fixed-/);
+    await capture!();
     assert.equal(skipped, false);
     assert.equal(name(destination), outgoingName);
     assert.equal(name(source), 'source-name');
@@ -740,6 +787,7 @@ test('a keyed fixed bar joins both snapshots after the destination finishes load
 test('Back keeps sliding when the previous page brings back a fixed navigation bar', async () => {
   const win = new Window({ url: 'http://localhost/' });
   const content = win.document.createElement('main');
+  win.document.body.append(content);
   const nav = win.document.createElement('nav');
   content.getBoundingClientRect = () => new win.DOMRect(0, 0, 400, 600);
   nav.getBoundingClientRect = () => new win.DOMRect(0, 0, 400, 40);
@@ -781,6 +829,7 @@ test('Back keeps sliding when the previous page brings back a fixed navigation b
 test('Back captures the whole page when an outgoing fixed target is clipped', async () => {
   const win = new Window({ url: 'http://localhost/' });
   const content = win.document.createElement('main');
+  win.document.body.append(content);
   const nav = win.document.createElement('nav');
   content.getBoundingClientRect = () => new win.DOMRect(0, 0, 400, 600);
   nav.getBoundingClientRect = () => new win.DOMRect(0, -20, 400, 40);
@@ -821,7 +870,7 @@ test('Back captures the whole page when an outgoing fixed target is clipped', as
   }
 });
 
-test('navigation without swipe back does not clone the previous screen', () => {
+test('navigation without animation or swipe back does not clone the previous screen', () => {
   const { engine, window, el } = setup();
   try {
     let clones = 0;
@@ -885,7 +934,7 @@ test('snapshot styles are active before capture and clear if starting a transiti
   }
 });
 
-test('a change in the vertical viewport bounds skips the snapshot, not navigation', async () => {
+test('a change in viewport bounds uses the CSS slide and still commits navigation', async () => {
   const { engine, window, el } = setup();
   let top = 48;
   let skipped = 0;
@@ -898,12 +947,11 @@ test('a change in the vertical viewport bounds skips the snapshot, not navigatio
   engine.options.animation = 'ios';
   try {
     engine.navigate('push', '/detail', () => window.history.pushState({}, '', '/detail'));
-    const pending = update!();
-    assert.equal(skipped, 0);
     top = 72;
     engine.commit('/detail');
-    await pending;
-    assert.equal(skipped, 1);
+    assert.equal(update, undefined);
+    assert.equal(skipped, 0);
+    assert.equal(el.dataset.stackflowSlideIncoming, 'push');
     assert.equal(window.location.pathname, '/detail');
   } finally {
     engine.dispose();
