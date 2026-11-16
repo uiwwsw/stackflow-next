@@ -6,7 +6,6 @@
   --app-line: #dde3df;
   --app-muted: #5f6b64;
   --stackflow-background: #fff;
-  --stackflow-indicator: #16201b55;
   height: 100vh;
   height: 100dvh;
   color: var(--app-ink);

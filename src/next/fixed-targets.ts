@@ -65,12 +65,16 @@ function uniqueFixedKeys(elements: ReadonlySet<HTMLElement>) {
   return keys;
 }
 
-export function pinForTransition(content: HTMLElement, targets: ReadonlySet<HTMLElement>) {
-  const bounds = content.getBoundingClientRect();
+export function pinForTransition(content: HTMLElement, targets: ReadonlySet<HTMLElement>, source?: {
+  bounds: DOMRect;
+  elements: ReadonlyMap<HTMLElement, {original: HTMLElement; rect: DOMRect}>;
+}) {
+  const bounds = source?.bounds ?? content.getBoundingClientRect();
   const elements = [...targets].map(element => ({
     element,
+    original: source?.elements.get(element)?.original ?? element,
     key: element.getAttribute(keyAttribute),
-    rect: element.getBoundingClientRect(),
+    rect: source?.elements.get(element)?.rect ?? element.getBoundingClientRect(),
     name: `stackflow-next-fixed-${nextPinId++}`,
   }));
   const fits = ({rect}: typeof elements[number]) => rect.top >= bounds.top - .5 && rect.left >= bounds.left - .5 && rect.bottom <= bounds.bottom + .5 && rect.right <= bounds.right + .5;
@@ -95,8 +99,8 @@ export function pinForTransition(content: HTMLElement, targets: ReadonlySet<HTML
     captureDestination(next: ReadonlySet<HTMLElement>) {
       const destinationKeys = uniqueFixedKeys(next);
       const matches = elements.map(pin => {
-        const {element, key} = pin;
-        if (next.has(element) && element.getAttribute(keyAttribute) === key) return { pin, match: element };
+        const {element, original, key} = pin;
+        if (next.has(original) && original.getAttribute(keyAttribute) === key) return { pin, match: original };
         const match = key && sourceKeys.get(key) === element ? destinationKeys.get(key) : null;
         return { pin, match };
       });

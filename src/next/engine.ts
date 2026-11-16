@@ -1,6 +1,6 @@
 import { captureSlide } from './slide-fallback.js';
 import { aggregate, makeEvent, type DomainEvent, type Stack } from '@stackflow/core';
-import { findFixedTargets, matchesRoute, pinForTransition, resolveFixedSelectors, routePathname, type FixedTarget } from './fixed-targets.js';
+import { matchesRoute, resolveFixedSelectors, routePathname, type FixedTarget } from './fixed-targets.js';
 
 export const HISTORY_KEY = '__stackflow_next_v1';
 /** Previous screens kept as swipe-back previews. */
@@ -9,8 +9,6 @@ export type Entry = { id: string; position: number; url: string; scroll: number;
 export type Direction = 'push' | 'pop' | 'replace';
 export type SlideDirection = Exclude<Direction, 'replace'>;
 export type RouteTransition = { href: string; animation: 'ios' | 'modal' | 'none' };
-type Transition = { finished: Promise<void>; ready: Promise<void>; skipTransition(): void };
-type TransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => Transition };
 type NavigationWindow = Window & { navigation?: EventTarget & { currentEntry?: { index: number } | null } };
 type TraverseEvent = Event & {
   navigationType: string;
@@ -41,20 +39,13 @@ export class NavigationEngine {
   current: Entry | null = null;
   stack: Stack | null = null;
   private listeners = new Set<() => void>();
-  private generation = 0;
-  private finish: (() => void) | null = null;
   private loadingObserver: MutationObserver | null = null;
-  private waitForDestination = false;
   private historyIndex: number | undefined;
   private basePath: string | undefined;
   private renderedRoute: string | null = null;
-  private navigation: { href: string | null; expected: string | null; source: string; started: boolean } | null = null;
+  private navigation: { href: string | null; expected: string | null; source: string; waitForDestination: boolean; forceFallback: boolean } | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
-  private transition: Transition | null = null;
-  private clearSlide: (() => void) | undefined;
-  private transitionBounds: DOMRect | undefined;
-  private stopWatchingBounds: (() => void) | undefined;
-  private pins: (NonNullable<ReturnType<typeof pinForTransition>> & { selectors: readonly string[] }) | null = null;
+  private slide: Slide;
   private disconnected = false;
   private cleanup: (() => void) | null = null;
   private swipeBackEnabled = false;
@@ -96,6 +87,8 @@ export class NavigationEngine {
     const el=this.viewport(), current=this.current;if(!current||!el)return;
     const offset = this.scrollElement()?.scrollTop ?? 0;
     current.visual=el.cloneNode(true) as HTMLElement;current.visual.dataset.stackflowScroll=String(offset);
+    delete current.visual.dataset.stackflowSlideStaged;
+    delete current.visual.dataset.stackflowSlideIncoming;
   }
   // Swipe back only reveals screens below the current one. Keep the nearest
   // few so it still works after Back; a forward screen is recaptured on leave.
@@ -118,7 +111,7 @@ export class NavigationEngine {
     private readonly matchesSkeletonRoute: (href: string) => boolean = () => false,
     private readonly transitionRoutes: () => readonly RouteTransition[] = () => []) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  isPending = () => this.finish !== null;
+  isPending = () => this.navigation !== null;
   private emit() { this.listeners.forEach(fn => fn()); }
   private remember(meta: {id: string; position: number}, url: string) {
     let entry = this.entries.get(meta.id);
@@ -196,7 +189,7 @@ export class NavigationEngine {
       engine.historyIndex = engine.readHistoryIndex();
       const navigation = engine.navigation;
       // The route observer only tracks pathname and search parameters.
-      if (navigation?.started && navigation.expected === navigation.source && navigation.href === engine.url()) {
+      if (navigation && navigation.expected === navigation.source && navigation.href === engine.url()) {
         engine.commit(engine.appHref(navigation.href));
       }
     };
@@ -218,7 +211,7 @@ export class NavigationEngine {
       const viewport = engine.viewport();
       if (!viewport || disabled) return;
       const direction = traversal.destination.index < (engine.readHistoryIndex() ?? -1) ? 'pop' : 'push';
-      const slide = captureSlide(viewport, engine.scrollElement(), direction, modal);
+      const slide = engine.captureOutgoing(viewport, direction, modal, source, destination);
       if (!slide) return;
       const prepared = { destination, source, slide, signal: traversal.signal };
       earlyTraversal = prepared;
@@ -229,9 +222,7 @@ export class NavigationEngine {
       }, { once: true });
     };
     browserNavigation?.addEventListener?.('navigate', prepareTraversal);
-    let replayedPop: PopStateEvent | undefined;
     const pop = (event: PopStateEvent) => {
-      if (event === replayedPop) return;
       const destination = engine.url();
       const from = engine.current?.url ?? destination;
       const destinationRoute = routeKey(engine.win.location);
@@ -265,18 +256,11 @@ export class NavigationEngine {
         engine.rebuild();
       };
       if (!skipAnimation && state?.__NA === true && engine.canAnimate() && !engine.motion(visualSource, destination).disabled) {
-        // Next can commit before the browser captures the outgoing screen. Deliver
-        // its history event inside the snapshot callback so capture comes first.
-        event.stopImmediatePropagation();
+        // Capture the outgoing DOM before Next's listener handles this same event.
         engine.begin(engine.direction, destination, () => {
-          const PopEvent = engine.win.document.defaultView!.PopStateEvent;
-          replayedPop = new PopEvent('popstate', { state });
-          try { engine.win.dispatchEvent(replayedPop); }
-          finally { replayedPop = undefined; }
           // Next's route observer does not run when the rendered URL is unchanged.
           if (alreadyRendered && engine.url() === destination && engine.isPending()) {
             syncRenderedEntry();
-            engine.checkTransitionBounds();
             engine.finishWhenPageIsReady();
           }
         }, visualSource, usePrepared ? prepared.slide : undefined, usePrepared && alreadyRendered && visualSource !== destinationRoute);
@@ -289,7 +273,7 @@ export class NavigationEngine {
     this.win.addEventListener('popstate', pop, true);
     this.rebuild();
     this.cleanup = () => {
-      this.disconnected = true; this.clearSlide?.(); this.release(); this.transition?.skipTransition(); this.clearTransitionBounds(); this.clearPins();
+      this.disconnected = true; this.cancelTransition();
       if (history.pushState === wrappedPush) history.pushState = push;
       if (history.replaceState === wrappedReplace) history.replaceState = replace;
       history.scrollRestoration = oldRestoration;
@@ -324,18 +308,27 @@ export class NavigationEngine {
     clearTimeout(this.timeout);
     this.loadingObserver?.disconnect();
     this.loadingObserver = null;
-    const finish = this.finish;
-    this.finish = null;
+    const navigation = this.navigation;
     this.navigation = null;
     delete this.win.document.documentElement.dataset.stackflowPending;
-    finish?.();
-    if (finish) this.emit();
+    if (navigation) this.emit();
+  }
+  private completeNavigation() {
+    const navigation = this.navigation;
+    if (!navigation) return;
+    const slide = this.slide;
+    this.release();
+    if (slide && this.slide === slide) {
+      slide.play(() => {
+        if (this.slide === slide) this.slide = undefined;
+      }, navigation.forceFallback);
+    }
   }
   private finishWhenPageIsReady() {
     const viewport = this.viewport();
     const Observer = this.win.document.defaultView?.MutationObserver;
-    if (!this.waitForDestination || (!this.transition && !this.clearSlide) || !viewport || !Observer) {
-      this.release();
+    if (!this.navigation?.waitForDestination || !this.slide || !viewport || !Observer) {
+      this.completeNavigation();
       return;
     }
     const ready = () => {
@@ -345,49 +338,28 @@ export class NavigationEngine {
       return true;
     };
     if (ready()) {
-      this.release();
+      this.completeNavigation();
       return;
     }
+    this.slide.hold();
     this.loadingObserver?.disconnect();
     this.loadingObserver = new Observer(() => {
-      if (ready()) this.release();
+      if (ready()) this.completeNavigation();
     });
     this.loadingObserver.observe(viewport, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'style', 'class'] });
   }
-  private clearTransitionBounds() {
-    this.stopWatchingBounds?.();
-    this.stopWatchingBounds = undefined;
-    this.transitionBounds = undefined;
-  }
-  private clearPins() {
-    this.pins?.dispose();
-    this.pins = null;
-  }
-  private checkTransitionBounds = () => {
-    const before = this.transitionBounds;
-    if (!before || !this.transition) return;
-    const after = this.viewport()?.getBoundingClientRect();
-    // Skip the slide if the slots reflow or the page scrolls while it is running.
-    if (!after || Math.abs(before.top - after.top) > .5 || Math.abs(before.bottom - after.bottom) > .5) {
-      this.clearTransitionBounds();
-      this.transition.skipTransition();
-    }
-  };
   private canAnimate() {
-    const doc = this.win.document as TransitionDocument;
-    return this.options.animation !== 'none' && typeof doc.startViewTransition === 'function' &&
+    return this.options.animation !== 'none' && typeof this.win.document.startViewTransition === 'function' &&
       !this.win.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   }
+  private captureOutgoing(viewport: HTMLElement, direction: Direction, modal: 'enter' | 'exit' | undefined, from: string, destination: string) {
+    const selectors = modal ? [] : resolveFixedSelectors(this.fixedTargets(), this.appHref(from), this.appHref(destination));
+    return captureSlide(viewport, this.scrollElement(), direction, modal, selectors);
+  }
   private cancelTransition() {
-    this.generation++;
-    this.clearSlide?.();
-    this.clearSlide = undefined;
-    this.release(); this.transition?.skipTransition(); this.transition = null;
-    this.clearTransitionBounds();
-    this.clearPins();
-    const { dataset } = this.win.document.documentElement;
-    delete dataset.stackflowAnimating;
-    delete dataset.stackflowModal;
+    this.slide?.dispose();
+    this.slide = undefined;
+    this.release();
   }
   begin(direction: Direction, href: string | null, action: () => void, from = this.current?.url ?? this.url(),
     preparedSlide?: Slide, forceFallback = false) {
@@ -399,103 +371,33 @@ export class NavigationEngine {
       ? 'push' : direction;
     this.direction = direction;
     const origin = this.win.location.origin;
+    const animate = !disabled && slideDirection !== 'replace' && this.canAnimate();
+    const viewport = this.viewport();
+    if (animate) {
+      this.slide = preparedSlide ?? (viewport ? this.captureOutgoing(viewport, slideDirection, modal, from, destination) : undefined);
+    } else {
+      preparedSlide?.dispose();
+    }
     const navigation = {
       href,
       expected: href ? routeKey(new URL(href, origin)) : null,
       source: routeKey(new URL(from, origin)),
-      started: false,
+      waitForDestination: !!this.options.waitForPage && !this.matchesSkeletonRoute(this.appHref(destination)),
+      forceFallback,
     };
     this.navigation = navigation;
-    this.waitForDestination = !!this.options.waitForPage && !this.matchesSkeletonRoute(this.appHref(destination));
     dataset.stackflowPending = 'true';
     dataset.stackflowDirection = slideDirection;
-    const doc = this.win.document as TransitionDocument;
-    const generation = this.generation;
-    let rejectPending: (error: unknown) => void = () => {};
-    // Register the completion gate before the browser captures a snapshot.
-    // On popstate Next may commit before the asynchronous update callback runs.
-    const pending = new Promise<void>((resolve, reject) => {
-      this.finish = resolve;
-      rejectPending = reject;
-    });
-    pending.catch(() => {});
-    let called = false;
-    const run = () => {
-      if (called || this.disconnected || generation !== this.generation) return Promise.resolve();
-      called = true;
-      navigation.started = true;
-      try { action(); } catch (error) { rejectPending(error); this.release(); }
-      return pending;
-    };
-    const animate = !disabled && slideDirection !== 'replace' && this.canAnimate();
-    const viewport = this.viewport();
-    const slide = preparedSlide ?? (animate && viewport ? captureSlide(viewport, this.scrollElement(), slideDirection, modal) : undefined);
-    this.clearSlide = slide?.dispose;
-    // Native snapshots have a finite lifetime. Keep the outgoing visual if
-    // that lifetime ends before Next has streamed and committed the page.
-    const useFallback = () => {
-      if (!slide || this.disconnected || generation !== this.generation) return;
-      if (this.isPending()) slide.hold();
-      else slide.play();
-    };
-    pending.then(() => {
-      if (!this.disconnected && generation === this.generation) slide?.commit();
-    }, () => slide?.dispose());
     this.timeout = setTimeout(() => {
-      if (slide) useFallback();
-      this.transition?.skipTransition();
-      void run().catch(() => {});
-      if (!slide) this.release();
+      // Once a loading screen has committed, the deadline reveals it rather
+      // than keeping a stale image on screen. Before commit, release the clone.
+      if (this.loadingObserver) this.completeNavigation();
+      else this.cancelTransition();
     }, this.options.timeout);
     this.emit();
-    if (animate && !forceFallback) {
-      const selectors = modal ? [] : resolveFixedSelectors(this.fixedTargets(), this.appHref(from), this.appHref(destination));
-      if (viewport && selectors.length) {
-        const targets = findFixedTargets(viewport, selectors);
-        const css = doc.defaultView?.CSS;
-        if (targets.size && css?.supports('selector(::view-transition-group(.stackflow-fixed))')) {
-          const pins = pinForTransition(viewport, targets);
-          if (pins) this.pins = { ...pins, selectors };
-        }
-      }
-      this.transitionBounds = viewport?.getBoundingClientRect();
-      if (modal) dataset.stackflowModal = modal;
-      dataset.stackflowAnimating = 'true';
-      try {
-        const transition = doc.startViewTransition!(() => run().then(() => {
-          if (this.disconnected || generation !== this.generation || !this.pins) return;
-          const { selectors, captureDestination } = this.pins;
-          if (!captureDestination(findFixedTargets(this.viewport(), selectors))) this.transition?.skipTransition();
-        }));
-        this.transition = transition;
-        if (viewport) {
-          const Observer = doc.defaultView?.ResizeObserver;
-          const observer = Observer ? new Observer(this.checkTransitionBounds) : undefined;
-          observer?.observe(viewport);
-          const frame = viewport.parentElement?.parentElement;
-          if (frame) for (const slot of frame.children) observer?.observe(slot);
-          this.win.addEventListener('scroll', this.checkTransitionBounds, { passive: true });
-          this.stopWatchingBounds = () => {
-            observer?.disconnect();
-            this.win.removeEventListener('scroll', this.checkTransitionBounds);
-          };
-        }
-        transition.ready.then(() => {
-          slide?.dispose();
-          if (generation === this.generation) {
-            this.clearSlide = undefined;
-            this.clearTransitionBounds();
-          }
-        }, () => {
-          useFallback();
-          void run().catch(() => {});
-        });
-        transition.finished.catch(()=>{}).finally(()=>{ if(this.transition===transition) { this.transition=null; this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; } });
-      } catch { this.clearTransitionBounds(); this.clearPins(); delete dataset.stackflowAnimating; delete dataset.stackflowModal; void run().catch(()=>{}); }
-    } else {
-      if (forceFallback) useFallback();
-      void run().catch(() => {});
-    }
+    if (this.navigation !== navigation || this.disconnected) return;
+    try { action(); }
+    catch { if (this.navigation === navigation) this.cancelTransition(); }
   }
   navigate(direction: Direction, href: string | null, action: () => void, replaceDirection?: SlideDirection) {
     // Traversals are animated once, by the popstate observer.
@@ -521,7 +423,7 @@ export class NavigationEngine {
     this.renderedRoute = actual;
     const navigation = this.navigation;
     const redirected = navigation?.expected != null && navigation.expected !== actual;
-    if (redirected && (!navigation.started || navigation.source === actual)) return;
+    if (redirected && navigation.source === actual) return;
     const meta = metadata(this.win.history.state);
     if (meta) this.current = this.remember(meta,this.url());
     this.restoreScroll();
@@ -531,7 +433,6 @@ export class NavigationEngine {
       this.rebuild();
       return;
     }
-    this.checkTransitionBounds();
     this.rebuild(); this.finishWhenPageIsReady();
   }
   read<T>(key: string, fallback: T): T { return this.current?.values.has(key) ? this.current.values.get(key) as T : fallback; }

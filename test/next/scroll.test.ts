@@ -3,22 +3,22 @@ import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
 import { attachScrollViewport } from '../../src/next/scroll.ts';
 
-test('only the visible target gets the scrollbar and a second visible match restores the default', t => {
+test('only the visible target scrolls and a second visible match restores the default', t => {
   const win = new Window();
   const track = win.document.createElement('div');
   track.innerHTML = `
     <div class="stackflow-next-content">
       <main data-app-scroll></main><main data-app-scroll hidden></main>
-    </div><div></div>`;
+    </div>`;
   win.document.body.append(track);
-  const [body, indicator] = Array.from(track.children);
+  const [body] = Array.from(track.children);
   const [target, retained] = Array.from(body.children);
   Object.defineProperty(target, 'getClientRects', { value: () => ({ length: 1 }) });
   Object.defineProperty(retained, 'getClientRects', { value: () => ({ length: retained.hasAttribute('hidden') ? 0 : 1 }) });
   const warning = t.mock.method(console, 'warn', () => {});
 
   const captured: HTMLElement[] = [];
-  const controller = attachScrollViewport(body as unknown as HTMLElement, indicator as unknown as HTMLElement,
+  const controller = attachScrollViewport(body as unknown as HTMLElement,
     '[data-app-scroll]', element => captured.push(element), () => {});
   try {
     assert.equal(controller.getElement(), target);

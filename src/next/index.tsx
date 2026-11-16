@@ -42,7 +42,7 @@ export interface StackflowProviderProps {
   persistent?: ReactNode;
   animation?: 'ios' | 'none';
   preserveScroll?: boolean;
-  /** CSS selector for a single visible scroll region inside the provider body. */
+  /** CSS selector for a single visible native scroll container inside the provider body. */
   scrollTarget?: string;
   /** CSS selectors for shared elements inside the page that should not slide. */
   fixedTargets?: FixedTarget | readonly FixedTarget[];
@@ -55,7 +55,7 @@ export interface StackflowProviderProps {
   swipeBack?: boolean;
   maxEntries?: number;
   navigationTimeout?: number;
-  /** Wait for visible StackLoading boundaries to finish before animating. Defaults to true. */
+  /** Wait for visible StackLoading boundaries to finish before animating. Defaults to false. */
   waitForPage?: boolean;
   /** Exact pathnames or regular expressions that can slide in with their loading fallback visible. */
   skeletonRoutes?: readonly SkeletonRoute[];
@@ -66,13 +66,12 @@ export interface StackflowProviderProps {
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=true,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
   const modals = useRef<readonly string[]>([]);
   const transitions = useRef<readonly RouteTransition[]>([]);
   const matchesSkeletonRoute = useRef<(href: string) => boolean>(() => false);
-  const indicator=useRef<HTMLDivElement>(null);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
   const engineRef=useRef<NavigationEngine | null>(null);
   const [engine,setEngine]=useState<NavigationEngine|null>(null);
@@ -93,8 +92,8 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     }
   }, [transitionTarget]);
   useLayoutEffect(()=>{
-    if (!viewport.current || !indicator.current) return;
-    const controller = attachScrollViewport(viewport.current, indicator.current, scrollTarget,
+    if (!viewport.current) return;
+    const controller = attachScrollViewport(viewport.current, scrollTarget,
       element => engineRef.current?.capture(element), element => engineRef.current?.restoreScroll(element));
     scroll.current = controller;
     return () => { controller.dispose(); scroll.current = null; };
@@ -120,7 +119,6 @@ export function StackflowProvider({children,header,footer,persistent,animation='
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
         <div ref={viewport} className="stackflow-next-content">{children}</div>
-        <div ref={indicator} className="stackflow-next-indicator" aria-hidden="true"/>
       </div>
       {persistent != null && typeof persistent !== 'boolean' && <div className="stackflow-next-persistent">{persistent}</div>}
       {footer && <div className="stackflow-next-footer">{footer}</div>}

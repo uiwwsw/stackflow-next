@@ -84,8 +84,8 @@ export function Actions() {
   `replace(href, 'pop')` to slide in that direction while replacing the current
   history entry. With no direction, changes to only the query or hash switch
   directly even when the route has an animation override.
-- Native scrolling remains active. Its hidden scrollbar is replaced by a visual,
-  non-draggable indicator confined below the header and above the footer.
+- The browser scrolls the bounded content area and draws its native scrollbar
+  below the header and above the footer.
 - Control selection, callout and tap-highlight styling is scoped to controls;
   editable fields and `data-selectable` retain selection.
 
@@ -221,19 +221,30 @@ Search parameters in Next.js URLs and browser history continue to work.
 
 ## Choose which area scrolls
 
-By default, the provider body scrolls. Use `scrollTarget` to delegate scrolling,
-the indicator, and scroll restoration to one visible HTML element inside it.
-Give that element a bounded height so its contents can overflow.
+The `header`, `footer`, and `persistent` slots take up their own space. The
+remaining height is the provider body's native scroll viewport. The browser
+handles the scrollbar, touch momentum, and platform effects such as Safari's
+elastic overscroll. `fixedTargets` keeps selected elements still during route
+transitions. The page layout determines which elements are outside the scroll
+viewport.
+
+For a bar that belongs to a single page, put it next to the scrolling element
+inside a bounded flex column. Set `scrollTarget` to the selector of the element
+that fills the space between the bars.
 
 ```tsx
-<StackflowProvider header={<AppHeader />} scrollTarget="[data-app-scroll]">
-  <main data-app-scroll style={{ height: '100%' }}>{children}</main>
+<StackflowProvider scrollTarget="[data-app-scroll]">
+  <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <header style={{ flex: 'none' }}><PageHeader /></header>
+    <main data-app-scroll style={{ flex: 1, minHeight: 0 }}>{children}</main>
+    <footer style={{ flex: 'none' }}><PageActions /></footer>
+  </div>
 </StackflowProvider>
 ```
 
-The provider body stops scrolling while the target is active. The target uses
-native scrolling with a visual indicator inside its bounds. Keep the selector
-unique within the visible screen; hidden routes retained by Next do not count.
+While the target is active, it owns native scrolling and scroll restoration.
+Keep the selector unique within the visible screen. Hidden routes retained by
+Next do not count.
 An invalid selector or a selector with zero or multiple visible matches falls
 back to the provider body and logs a warning in development.
 
@@ -279,19 +290,21 @@ cache is memory-only and bounded by `maxEntries` (default 32).
 `useStack()` exposes Stackflow core's computed Stack; select `isTop` rather than
 assuming array order. Core computes navigation state; it does not render RSCs.
 
-By default the outgoing screen stays visible until the destination renders and
-its visible `StackLoading` boundaries resolve. Wrap the fallback in
-`loading.tsx` or Suspense with `<StackLoading>` to mark it as a readiness
-boundary. Unmarked Suspense boundaries can continue streaming.
+Stackflow starts Next.js navigation as soon as it captures the outgoing DOM.
+By default the slide starts when the destination first renders, including a
+skeleton from `loading.tsx`. Next.js streams the completed content into that
+screen. Prefetching can make the skeleton or page available earlier.
 
-List a destination in `skeletonRoutes` to slide in its first render, which
-can be a skeleton from that route's `loading.tsx`. The skeleton is then
-replaced by the completed content in place. Next.js prefetching can make
-that fallback available earlier. The same rule applies when arriving via
-a link, browser Back, or browser Forward.
+Set `waitForPage` to keep the outgoing body visible while the destination has a
+visible `<StackLoading>` boundary. Wrap the fallback in `loading.tsx` or
+Suspense to mark it as a readiness boundary. Unmarked Suspense boundaries can
+continue streaming. While waiting, shared `header`, `footer` and `persistent`
+slots remain interactive. Use `skeletonRoutes` with `waitForPage` to let selected
+destinations slide on their first render, including through Back and Forward.
 
 ```tsx
 <StackflowProvider
+  waitForPage
   skeletonRoutes={['/checkout', { pattern: '^/products/[^/]+$' }]}
 >
   {children}
@@ -314,20 +327,18 @@ export default function Loading() {
 }
 ```
 
-`waitForPage={false}` enables first-render transitions across the provider.
-In 1.0, the `loading` prop supplies default content for `StackLoading` and
-can be set to `null` for a marker with no visible content. The outgoing
-screen stays visible without a provider-wide loading overlay. The
-`navigationTimeout` option (default 4000 ms) releases a stalled browser snapshot.
-If the destination is still loading, Stackflow keeps the outgoing screen visible
-and plays the configured slide when the destination is ready.
+The `loading` prop supplies default content for `StackLoading` and can be set
+to `null` for a marker with no visible content. `navigationTimeout` (4000 ms by
+default) bounds the wait. At that point a committed skeleton can slide into
+view, or a route that still has no commit can render when it becomes available.
 When a client-side redirect commits a different route, Stackflow records the
 actual destination and releases the snapshot. Competing history or View
 Transition libraries require application-specific testing.
 
-For same-document Back and Forward, Stackflow captures the outgoing screen
-on the Navigation API’s `navigate` event when available. Older browsers use
-the capture-phase `popstate` listener. Browsers without View Transitions use ordinary navigation. Initial page loads,
+For same-document Back and Forward, Stackflow copies the outgoing DOM on the
+Navigation API’s `navigate` event when available. Older browsers use the
+capture-phase `popstate` listener. Next receives the original history event.
+Browsers without View Transitions use ordinary navigation. Initial page loads,
 reloads, and links activated before hydration follow browser navigation. Only same-origin
 HTTP(S) destinations are supported by the router helper. Ordinary Next Links
 still work but forward snapshot motion requires StackLink or useStackRouter.
