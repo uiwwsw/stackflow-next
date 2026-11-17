@@ -42,7 +42,7 @@ test('only the visible target scrolls and a second visible match restores the de
   assert.equal(target.hasAttribute('data-stackflow-scroll-target'), false);
 });
 
-test('the window scrollbar keeps a stable track as the target moves and reaches both edges', t => {
+test('the window scrollbar follows movement up to both edges without snapping early', t => {
   const win = new Window();
   const root = win.document.documentElement;
   Object.defineProperties(root, {
@@ -81,7 +81,12 @@ test('the window scrollbar keeps a stable track as the target moves and reaches 
     assert.equal(thumb.hidden, false);
     assert.equal(thumb.style.right, '23px');
     assert.equal(thumbTop(), 50);
+    assert.equal(thumb.hasAttribute('data-stackflow-scrolling'), false);
     assert.ok(Math.abs(size - 580 ** 2 / 1780) < 0.001);
+
+    updateOffset(0.5);
+    assert.ok(thumbTop() > 50);
+    assert.equal(thumb.hasAttribute('data-stackflow-scrolling'), true);
 
     updateOffset(600);
     assert.equal(parseFloat(thumb.style.height), size);
@@ -89,6 +94,9 @@ test('the window scrollbar keeps a stable track as the target moves and reaches 
 
     updateOffset(1199.5);
     assert.equal(parseFloat(thumb.style.height), size);
+    assert.ok(thumbTop() + size < 630);
+
+    updateOffset(1200);
     assert.ok(Math.abs(thumbTop() + size - 630) < 0.001);
 
     for (const edge of [-60, 1260]) {
@@ -97,9 +105,10 @@ test('the window scrollbar keeps a stable track as the target moves and reaches 
       assert.ok(height < size);
       assert.ok(Math.abs(thumbTop() - (edge < 0 ? 50 : 630 - height)) < 0.001);
     }
-    assert.deepEqual(scrolled, [root, root, root, root]);
+    assert.deepEqual(scrolled, [root, root, root, root, root, root]);
   } finally {
     controller.dispose();
   }
   assert.equal(thumb.hidden, true);
+  assert.equal(thumb.hasAttribute('data-stackflow-scrolling'), false);
 });

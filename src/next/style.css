@@ -9,12 +9,24 @@
 .stackflow-next-content{height:100%}
 html[data-stackflow-animating] .stackflow-next-content:not([data-stackflow-slide-staged]){view-transition-name:stackflow-next-content}
 .stackflow-next-content,:where([data-stackflow-scroll-target]){overflow:auto;overscroll-behavior:contain}
-.stackflow-next-content,[data-stackflow-scroll-target]{scrollbar-width:none}
-.stackflow-next-content::-webkit-scrollbar,[data-stackflow-scroll-target]::-webkit-scrollbar{display:none}
+.stackflow-next-content,[data-stackflow-scroll-target],[data-stackflow-native-scrollbar-hidden]{scrollbar-width:none}
+.stackflow-next-content::-webkit-scrollbar,[data-stackflow-scroll-target]::-webkit-scrollbar,[data-stackflow-native-scrollbar-hidden]::-webkit-scrollbar{display:none}
 .stackflow-next-content[data-stackflow-scroll-delegated]{overflow:clip}
 .stackflow-next-scrollbar{
   position:absolute;top:0;right:3px;width:3px;z-index:3;border-radius:3px;
-  background:var(--stackflow-scrollbar-color,color-mix(in srgb, CanvasText 36%, transparent));pointer-events:none
+  background:var(--stackflow-scrollbar-color,color-mix(in srgb, CanvasText 36%, transparent));
+  pointer-events:none;opacity:0;transition:opacity 180ms ease-out
+}
+.stackflow-next-scrollbar[data-stackflow-scrolling]{opacity:1;transition:none}
+@media(prefers-reduced-motion:reduce){.stackflow-next-scrollbar{transition:none}}
+@supports (animation-timeline:scroll(root y)) {
+  .stackflow-next-scrollbar[data-stackflow-scrollbar-root]{
+    animation:stackflow-scrollbar-position linear both;animation-duration:auto;animation-timeline:scroll(root y)
+  }
+  @keyframes stackflow-scrollbar-position{
+    from{transform:translateY(var(--stackflow-scrollbar-start))}
+    to{transform:translateY(var(--stackflow-scrollbar-end))}
+  }
 }
 .stackflow-next-scrollbar[hidden],
 html[data-stackflow-animating] .stackflow-next-scrollbar,

@@ -245,6 +245,9 @@ runs between the sticky slots. It stays the same height while the selected
 content scrolls past it. Thumb size and travel use the document's actual
 scroll range, so the thumb reaches the track's bottom at the end of the page.
 With no single visible match, Stackflow uses the provider body's right edge.
+If existing CSS makes the selected area an independent native scroller,
+its scrollbar follows that element's scroll position. The thumb appears
+while the vertical scroll position changes and fades shortly after it stops.
 
 ```tsx
 <StackflowProvider scrollTarget="[data-app-scroll]"
