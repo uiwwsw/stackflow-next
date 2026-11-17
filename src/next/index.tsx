@@ -50,6 +50,8 @@ export interface StackflowProviderProps {
   modalRoutes?: readonly string[];
   /** First matching animation override for an app pathname. */
   transitionRoutes?: readonly RouteTransition[];
+  /** Skip page motion when only these query keys change on the same pathname. */
+  skipSlideQueryKeys?: readonly string[];
   /** @deprecated Remove this prop. The full page is always the transition surface. */
   transitionTarget?: string;
   swipeBack?: boolean;
@@ -66,11 +68,12 @@ export interface StackflowProviderProps {
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
   const modals = useRef<readonly string[]>([]);
   const transitions = useRef<readonly RouteTransition[]>([]);
+  const skippedQueryKeys = useRef<readonly string[]>([]);
   const matchesSkeletonRoute = useRef<(href: string) => boolean>(() => false);
   const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
   const engineRef=useRef<NavigationEngine | null>(null);
@@ -78,6 +81,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
   const router=useRouter();
   useLayoutEffect(() => { modals.current = modalRoutes ?? []; }, [modalRoutes]);
   useLayoutEffect(() => { transitions.current = transitionRoutes ?? []; }, [transitionRoutes]);
+  useLayoutEffect(() => { skippedQueryKeys.current = skipSlideQueryKeys ?? []; }, [skipSlideQueryKeys]);
   useLayoutEffect(() => {
     matchesSkeletonRoute.current = createSkeletonRouteMatcher(skeletonRoutes ?? []);
   }, [skeletonRoutes]);
@@ -102,7 +106,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
     const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries,waitForPage},
-      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, href => matchesSkeletonRoute.current(href), () => transitions.current);
+      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, href => matchesSkeletonRoute.current(href), () => transitions.current, () => skippedQueryKeys.current);
     const disconnect=value.connect(); engineRef.current=value; setEngine(value);
     return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
   },[animation,preserveScroll,maxEntries,navigationTimeout,waitForPage]);

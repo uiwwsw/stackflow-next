@@ -219,6 +219,22 @@ Route options still accept exact application pathnames without the Next.js
 `basePath` prefix. `transitionRoutes` uses the first matching pathname rule.
 Search parameters in Next.js URLs and browser history continue to work.
 
+## Query-driven popups
+
+Use `skipSlideQueryKeys` when a query parameter controls UI on the current
+page, such as a popup that has its own animation.
+
+```tsx
+<StackflowProvider skipSlideQueryKeys={['popup']}>
+  {children}
+</StackflowProvider>
+```
+
+This skips the page slide when opening, changing, or closing `popup` on the
+same pathname, including through `back()`, `forward()`, and the browser's
+history controls. The URL and history still update normally. If the pathname,
+hash, or another query key also changes, the usual transition rules apply.
+
 ## Choose which area scrolls
 
 The `header`, `footer`, and `persistent` slots take up their own space. The

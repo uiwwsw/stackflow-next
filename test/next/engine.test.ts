@@ -104,6 +104,72 @@ test('replace directions animate without adding entries and plain query or hash 
   }
 });
 
+test('popup query opt-in preserves Back and Forward entries and skips only popup slides', () => {
+  const win = new Window({ url: 'http://localhost/app/main?sort=name&tag=a&tag=b' });
+  const viewport = mountViewport(win);
+  let queryKeys: readonly string[] = ['popup'];
+  const engine = new NavigationEngine(win as unknown as globalThis.Window, () => viewport, {
+    animation: 'ios', preserveScroll: true, timeout: 100, maxEntries: 8,
+  }, undefined, undefined, undefined, undefined, undefined, () => queryKeys);
+  const navigation = Object.assign(new win.EventTarget(), { currentEntry: { index: 0 } });
+  Object.defineProperty(win, 'navigation', { value: navigation });
+  const slides: (string | undefined)[] = [];
+  (win.document as any).startViewTransition = (update: () => void) => {
+    slides.push(win.document.documentElement.dataset.stackflowDirection);
+    const finished = Promise.resolve().then(update);
+    return { ready: finished, finished, skipTransition() {} };
+  };
+  const delivered: string[] = [];
+  win.addEventListener('popstate', () => delivered.push(win.location.search));
+  win.history.replaceState({ __NA: true }, '');
+  engine.connect();
+  try {
+    const main = '/main?sort=name&tag=a&tag=b';
+    const popup = '/main?tag=a&tag=b&popup=pickup-store&sort=name';
+    engine.commit(main);
+    const mainEntry = win.history.state;
+    const push = (href: string) => {
+      engine.navigate('push', href, () => win.history.pushState({ __NA: true }, '', '/app' + href));
+      engine.commit(href);
+    };
+    navigation.currentEntry.index = 1;
+    push(popup);
+    const popupEntry = win.history.state;
+    assert.equal(popupEntry[HISTORY_KEY].position, mainEntry[HISTORY_KEY].position + 1);
+    assert.equal(engine.usesNonInteractiveBack(), true);
+
+    const traverse = (href: string, state: unknown, index: number, commitEarly = false) => {
+      const url = 'http://localhost/app' + href;
+      navigation.dispatchEvent(Object.assign(new win.Event('navigate'), {
+        navigationType: 'traverse', destination: { sameDocument: true, url, index },
+      }));
+      navigation.currentEntry.index = index;
+      Object.getPrototypeOf(win.history).replaceState.call(win.history, state, '', url);
+      if (commitEarly) engine.commit(href);
+      win.dispatchEvent(new win.PopStateEvent('popstate', { state }));
+      engine.commit(href);
+    };
+    engine.navigate('pop', null, () => traverse(main, mainEntry, 0, true));
+    assert.equal(engine.current?.id, mainEntry[HISTORY_KEY].id);
+    traverse(popup, popupEntry, 1);
+    assert.equal(engine.current?.id, popupEntry[HISTORY_KEY].id);
+    assert.deepEqual(delivered, ['?sort=name&tag=a&tag=b', '?tag=a&tag=b&popup=pickup-store&sort=name']);
+    assert.equal(engine.current?.url, '/app' + popup);
+    assert.deepEqual(slides, []);
+
+    push('/main?sort=name&tag=b&tag=a'); // Order matters for repeated non-popup values.
+    push('/main?sort=name&tag=b&tag=a&popup=pickup-store#orders');
+    push('/other?sort=name&tag=b&tag=a#orders');
+    assert.deepEqual(slides, ['push', 'push', 'push']);
+
+    queryKeys = [];
+    push('/other?sort=name&tag=b&tag=a&popup=pickup-store#orders');
+    assert.deepEqual(slides, ['push', 'push', 'push', 'push']);
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('a route commit accepts equivalent URL and search parameter encodings', () => {
   const { engine, window } = setup();
   try {

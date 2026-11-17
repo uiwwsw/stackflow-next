@@ -17,6 +17,7 @@ type TraverseEvent = Event & {
   hasUAVisualTransition?: boolean;
 };
 type Slide = ReturnType<typeof captureSlide>;
+type TraversalSlide = { visualSource: string; preparedSlide: Slide; forceFallback: boolean };
 export function safeHref(href: string, base: string) {
   const url = new URL(href, base), origin = new URL(base).origin;
   if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol) || url.pathname.startsWith('//')) {
@@ -43,7 +44,7 @@ export class NavigationEngine {
   private historyIndex: number | undefined;
   private basePath: string | undefined;
   private renderedRoute: string | null = null;
-  private navigation: { href: string | null; expected: string | null; source: string; waitForDestination: boolean; forceFallback: boolean } | null = null;
+  private navigation: { href: string; expected: string; source: string; waitForDestination: boolean; forceFallback: boolean } | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private slide: Slide;
   private disconnected = false;
@@ -68,13 +69,29 @@ export class NavigationEngine {
     const rule = this.transitionRoutes().find(rule => matchesRoute(rule.href, href));
     return rule?.animation ?? (this.modalRoutes().some(route => matchesRoute(route, href)) ? 'modal' : undefined);
   }
-  private motion(from: string, to: string) {
-    const source = this.routeAnimation(this.appHref(from));
+  private skipsQuerySlide(from: string, to: string) {
+    const keys = this.skipSlideQueryKeys();
+    if (!keys.length || routePathname(from) !== routePathname(to)) return false;
+    const previous = new URL(from, this.win.location.origin);
+    const next = new URL(to, this.win.location.origin);
+    if (previous.hash !== next.hash || previous.search === next.search) return false;
+    previous.searchParams.sort();
+    next.searchParams.sort();
+    if (previous.search === next.search) return false;
+    for (const key of keys) {
+      previous.searchParams.delete(key);
+      next.searchParams.delete(key);
+    }
+    return previous.search === next.search;
+  }
+  private motion(from: string, to: string, visualSource = from) {
+    const source = this.routeAnimation(this.appHref(visualSource));
     const destination = this.routeAnimation(this.appHref(to));
-    const disabled = source === 'none' || destination === 'none';
+    const skipQuerySlide = this.skipsQuerySlide(from, to);
+    const disabled = source === 'none' || destination === 'none' || skipQuerySlide;
     const modal: 'enter' | 'exit' | undefined = source === 'modal' && destination !== 'modal' ? 'exit'
       : destination === 'modal' && source !== 'modal' ? 'enter' : undefined;
-    return { disabled, modal, animateReplace: !!modal || source === 'ios' || destination === 'ios' };
+    return { disabled, modal, skipQuerySlide, animateReplace: !!modal || source === 'ios' || destination === 'ios' };
   }
   usesNonInteractiveBack() {
     const previous = this.previousEntry();
@@ -109,7 +126,8 @@ export class NavigationEngine {
     private readonly fixedTargets: () => readonly FixedTarget[] = () => [],
     private readonly modalRoutes: () => readonly string[] = () => [],
     private readonly matchesSkeletonRoute: (href: string) => boolean = () => false,
-    private readonly transitionRoutes: () => readonly RouteTransition[] = () => []) {}
+    private readonly transitionRoutes: () => readonly RouteTransition[] = () => [],
+    private readonly skipSlideQueryKeys: () => readonly string[] = () => []) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   isPending = () => this.navigation !== null;
   private emit() { this.listeners.forEach(fn => fn()); }
@@ -195,7 +213,7 @@ export class NavigationEngine {
     };
     history.pushState = wrappedPush; history.replaceState = wrappedReplace;
     const browserNavigation = (this.win as NavigationWindow).navigation;
-    let earlyTraversal: { destination: string; source: string; slide: Slide; signal?: AbortSignal } | undefined;
+    let earlyTraversal: { destination: string; source: string; slide: Slide; skipQuerySlide: boolean; signal?: AbortSignal } | undefined;
     const prepareTraversal = (event: Event) => {
       const traversal = event as TraverseEvent;
       if (traversal.navigationType !== 'traverse') return;
@@ -206,18 +224,20 @@ export class NavigationEngine {
       const url = new URL(traversal.destination.url);
       if (url.origin !== engine.win.location.origin) return;
       const destination = url.pathname + url.search + url.hash;
-      const source = engine.renderedRoute ?? engine.url();
-      const { disabled, modal } = engine.motion(source, destination);
+      const from = engine.current?.url ?? engine.url();
+      const source = engine.renderedRoute ?? from;
+      const { disabled, modal, skipQuerySlide } = engine.motion(from, destination, source);
       const viewport = engine.viewport();
-      if (!viewport || disabled) return;
       const direction = traversal.destination.index < (engine.readHistoryIndex() ?? -1) ? 'pop' : 'push';
-      const slide = engine.captureOutgoing(viewport, direction, modal, source, destination);
-      if (!slide) return;
-      const prepared = { destination, source, slide, signal: traversal.signal };
+      const slide = viewport && !disabled ? engine.captureOutgoing(viewport, direction, modal, source, destination) : undefined;
+      if (!slide && !skipQuerySlide) return;
+      // Next can commit the destination before popstate. Keep the query
+      // decision made while the originating URL was still available.
+      const prepared = { destination, source, slide, skipQuerySlide, signal: traversal.signal };
       earlyTraversal = prepared;
       traversal.signal?.addEventListener('abort', () => {
         if (earlyTraversal !== prepared) return;
-        slide.dispose();
+        slide?.dispose();
         earlyTraversal = undefined;
       }, { once: true });
     };
@@ -249,13 +269,13 @@ export class NavigationEngine {
       engine.historyIndex = index;
       if (!known && state?.__NA === true) replace.call(history, {...state,[HISTORY_KEY]:meta},'',engine.win.location.href);
       engine.current = engine.remember(meta, destination);
-      const skipAnimation = engine.skipNextPopAnimation || event.hasUAVisualTransition;
+      const skipAnimation = engine.skipNextPopAnimation || event.hasUAVisualTransition || (usePrepared && prepared.skipQuerySlide);
       engine.skipNextPopAnimation = false;
       const syncRenderedEntry = () => {
         if (!sameRoute || from === destination) engine.restoreScroll();
         engine.rebuild();
       };
-      if (!skipAnimation && state?.__NA === true && engine.canAnimate() && !engine.motion(visualSource, destination).disabled) {
+      if (!skipAnimation && state?.__NA === true && engine.canAnimate() && !engine.motion(from, destination, visualSource).disabled) {
         // Capture the outgoing DOM before Next's listener handles this same event.
         engine.begin(engine.direction, destination, () => {
           // Next's route observer does not run when the rendered URL is unchanged.
@@ -263,7 +283,11 @@ export class NavigationEngine {
             syncRenderedEntry();
             engine.finishWhenPageIsReady();
           }
-        }, visualSource, usePrepared ? prepared.slide : undefined, usePrepared && alreadyRendered && visualSource !== destinationRoute);
+        }, from, {
+          visualSource,
+          preparedSlide: usePrepared ? prepared.slide : undefined,
+          forceFallback: usePrepared && alreadyRendered && visualSource !== destinationRoute,
+        });
       } else {
         prepared?.slide?.dispose();
         engine.cancelTransition();
@@ -361,28 +385,27 @@ export class NavigationEngine {
     this.slide = undefined;
     this.release();
   }
-  begin(direction: Direction, href: string | null, action: () => void, from = this.current?.url ?? this.url(),
-    preparedSlide?: Slide, forceFallback = false) {
+  private begin(direction: Direction, href: string, action: () => void, from = this.current?.url ?? this.url(), traversal?: TraversalSlide) {
     this.cancelTransition();
     const { dataset } = this.win.document.documentElement;
-    const destination = href ?? this.url();
-    const { disabled, modal, animateReplace } = this.motion(from, destination);
-    const slideDirection = direction === 'replace' && animateReplace && routePathname(from) !== routePathname(destination)
+    const { visualSource = from, preparedSlide, forceFallback = false } = traversal ?? {};
+    const { disabled, modal, animateReplace } = this.motion(from, href, visualSource);
+    const slideDirection = direction === 'replace' && animateReplace && routePathname(visualSource) !== routePathname(href)
       ? 'push' : direction;
     this.direction = direction;
     const origin = this.win.location.origin;
     const animate = !disabled && slideDirection !== 'replace' && this.canAnimate();
     const viewport = this.viewport();
     if (animate) {
-      this.slide = preparedSlide ?? (viewport ? this.captureOutgoing(viewport, slideDirection, modal, from, destination) : undefined);
+      this.slide = preparedSlide ?? (viewport ? this.captureOutgoing(viewport, slideDirection, modal, visualSource, href) : undefined);
     } else {
       preparedSlide?.dispose();
     }
     const navigation = {
       href,
-      expected: href ? routeKey(new URL(href, origin)) : null,
-      source: routeKey(new URL(from, origin)),
-      waitForDestination: !!this.options.waitForPage && !this.matchesSkeletonRoute(this.appHref(destination)),
+      expected: routeKey(new URL(href, origin)),
+      source: routeKey(new URL(visualSource, origin)),
+      waitForDestination: !!this.options.waitForPage && !this.matchesSkeletonRoute(this.appHref(href)),
       forceFallback,
     };
     this.navigation = navigation;
@@ -422,7 +445,7 @@ export class NavigationEngine {
     if (routeKey(observed) !== routeKey(new URL(this.appHref(this.url()), origin))) return;
     this.renderedRoute = actual;
     const navigation = this.navigation;
-    const redirected = navigation?.expected != null && navigation.expected !== actual;
+    const redirected = navigation && navigation.expected !== actual;
     if (redirected && navigation.source === actual) return;
     const meta = metadata(this.win.history.state);
     if (meta) this.current = this.remember(meta,this.url());
