@@ -240,23 +240,28 @@ hash, or another query key also changes, the usual transition rules apply.
 The document scrolls by default. Existing calls to `window.scrollTo()` and
 `window.scrollBy()`, reads of `window.scrollY`, and window `scroll` listeners
 work with Stackflow. Stackflow hides the browser's document scrollbar and
-draws a vertical thumb aligned to the right edge of `scrollTarget`. The track
-uses the visible space between the header and footer. It excludes both the
-provider's sticky slots and CSS `position: fixed` bars inside those slots.
-Inside the provider, a fixed `header`, `footer`, `banner` or `contentinfo`, or
-an element identified by `fixedTargets` or `data-stackflow-fixed-key`, also
-limits the track when it covers its edge. Thumb size and travel use that
-visible height and the native scroll range, so the thumb reaches the track's
-bottom at the end of the page.
-With no single visible match, Stackflow uses the provider body's right edge.
+draws a vertical thumb beside the content box of `scrollTarget`, excluding
+its margins, borders and padding. The track starts at the content's top edge
+as seen at the start of scrolling and ends at its bottom edge as seen at
+the end of scrolling, within the visible viewport. Its length stays steady
+as the content moves and the thumb follows the full native scroll range.
+No header or footer settings are needed.
+
+When a sticky provider slot or a fixed bar covers the track, the track stops
+at the bar's visible edge. Fixed bars inside the provider can use semantic
+header and footer markup, `fixedTargets`, or `data-stackflow-fixed-key`.
+If the selector doesn't resolve to one visible target, the track uses the
+provider body. If the target scrolls completely past the viewport, leaving
+no space common to the start and end, the track uses the visible viewport
+height between any recognized bars.
+
 If existing CSS makes the selected area an independent native scroller,
 the scrollbar follows that element while it scrolls and switches to the
-document when document scrolling takes over. The thumb is sized to the
-visible track and fades shortly after vertical scrolling stops.
+document when document scrolling takes over. The thumb fades shortly after
+vertical scrolling stops.
 
 ```tsx
-<StackflowProvider scrollTarget="[data-app-scroll]"
-  header={<PageHeader />} footer={<PageActions />}>
+<StackflowProvider scrollTarget="[data-app-scroll]">
   <main data-app-scroll>{children}</main>
 </StackflowProvider>
 ```

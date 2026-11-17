@@ -55,23 +55,56 @@ function scrollbarActivity(win: Window, thumb: HTMLElement) {
   };
 }
 
+function contentBox(element: HTMLElement, bounds: ScrollBounds, borderBox: boolean): ScrollBounds {
+  const style = element.ownerDocument.defaultView!.getComputedStyle(element);
+  const px = (value: string) => parseFloat(value) || 0;
+  return {
+    top: bounds.top + px(style.paddingTop) + (borderBox ? px(style.borderTopWidth) : 0),
+    right: bounds.right - px(style.paddingRight) - (borderBox ? px(style.borderRightWidth) : 0),
+    bottom: bounds.bottom - px(style.paddingBottom) - (borderBox ? px(style.borderBottomWidth) : 0),
+    left: bounds.left + px(style.paddingLeft) + (borderBox ? px(style.borderLeftWidth) : 0),
+  };
+}
+
+function fitTrack(track: ScrollBounds, region: ScrollBounds, offset: number, range: number) {
+  track.left = Math.max(track.left, region.left);
+  track.right = Math.min(track.right, region.right);
+  // Evaluate each content edge at its native scroll endpoint. Using the
+  // current viewport-relative edges would resize the rail during scrolling.
+  const top = Math.max(track.top, region.top + offset);
+  const bottom = Math.min(track.bottom, region.bottom + offset - range);
+  if (bottom > top) {
+    track.top = top;
+    track.bottom = bottom;
+  }
+}
+
 function paintElementScrollbar(thumb: HTMLElement, element: HTMLElement,
   bounds: ScrollBounds, origin: {top: number; right: number} = bounds,
-  excludeChrome?: (track: ScrollBounds) => void) {
+  excludeChrome?: (track: ScrollBounds) => void, target?: HTMLElement) {
   const rect = element.getBoundingClientRect();
   const { clientHeight, clientLeft, clientTop, clientWidth, scrollHeight, scrollTop } = element;
-  const track = {
-    top: Math.max(bounds.top, rect.top + clientTop),
-    bottom: Math.min(bounds.bottom, rect.top + clientTop + clientHeight),
-    left: Math.max(bounds.left, rect.left + clientLeft),
-    right: Math.min(bounds.right, rect.left + clientLeft + clientWidth),
+  const range = scrollHeight - clientHeight;
+  const scrollport = {
+    top: rect.top + clientTop,
+    bottom: rect.top + clientTop + clientHeight,
+    left: rect.left + clientLeft,
+    right: rect.left + clientLeft + clientWidth,
   };
+  const track = {
+    top: Math.max(bounds.top, scrollport.top),
+    bottom: Math.min(bounds.bottom, scrollport.bottom),
+    left: Math.max(bounds.left, scrollport.left),
+    right: Math.min(bounds.right, scrollport.right),
+  };
+  if (target === element) fitTrack(track, contentBox(element, scrollport, false), 0, 0);
+  else if (target) fitTrack(track, contentBox(target, target.getBoundingClientRect(), true), scrollTop, range);
   excludeChrome?.(track);
   paintThumb(thumb, {
     top: track.top - origin.top, right: origin.right - track.right,
     height: track.right > track.left ? track.bottom - track.top : 0,
   },
-    scrollHeight - clientHeight, scrollTop);
+    range, scrollTop);
 }
 
 function visualBounds(content: HTMLElement): ScrollBounds {
@@ -227,24 +260,27 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
       }
     }
     const viewportBounds = windowViewportBounds(content);
-    const rect = target.getBoundingClientRect();
-    viewportBounds.left = Math.max(viewportBounds.left, rect.left);
-    viewportBounds.right = Math.min(viewportBounds.right, rect.right);
+    const range = root.scrollHeight - root.clientHeight;
     // A wheel or touch gesture can continue in the document after an inner
     // scroller reaches its edge. Use the source that actually moved.
-    const scroller = root.scrollHeight > root.clientHeight ? activeScroller : nestedScroller ?? root;
+    const scroller = range > 0 ? activeScroller : nestedScroller ?? root;
     const documentScroll = scroller === root;
     thumb.toggleAttribute('data-stackflow-scrollbar-root', documentScroll);
     if (!documentScroll) {
-      paintElementScrollbar(thumb, scroller, viewportBounds, { top: 0, right: doc.documentElement.clientWidth }, chrome.exclude);
+      paintElementScrollbar(thumb, scroller, viewportBounds, { top: 0, right: doc.documentElement.clientWidth }, chrome.exclude, target);
       return;
     }
-    // The target moves with the document, so the visible viewport and the
-    // fixed bars supply the rail's stable vertical bounds.
+    const rect = target.getBoundingClientRect();
+    const region = target === content ? rect : contentBox(target, rect, true);
+    if (target !== content && !nestedScroller) fitTrack(viewportBounds, region, win.scrollY, range);
+    else {
+      viewportBounds.left = Math.max(viewportBounds.left, region.left);
+      viewportBounds.right = Math.min(viewportBounds.right, region.right);
+    }
     chrome.exclude(viewportBounds);
     const height = viewportBounds.right > viewportBounds.left ? viewportBounds.bottom - viewportBounds.top : 0;
     paintThumb(thumb, { top: viewportBounds.top, right: doc.documentElement.clientWidth - viewportBounds.right, height },
-      root.scrollHeight - root.clientHeight, win.scrollY, true);
+      range, win.scrollY, true);
   }
 
   function schedule() { if (!frame) frame = win.requestAnimationFrame(paint); }
@@ -327,7 +363,7 @@ export function attachScrollViewport(
     if (current !== previous && current !== content) onTargetReady(current);
     if (thumb?.parentElement) {
       const bounds = thumb.parentElement.getBoundingClientRect();
-      paintElementScrollbar(thumb, current, bounds, bounds, chrome?.exclude);
+      paintElementScrollbar(thumb, current, bounds, bounds, chrome?.exclude, current === content ? undefined : current);
     }
   }
 

@@ -42,7 +42,7 @@ test('only the visible target scrolls and a second visible match restores the de
   assert.equal(target.hasAttribute('data-stackflow-scroll-target'), false);
 });
 
-test('the window scrollbar follows movement up to both edges without snapping early', t => {
+test('the window scrollbar uses the target content box up to both native scroll endpoints', t => {
   const win = new Window();
   const root = win.document.documentElement;
   Object.defineProperties(root, {
@@ -54,17 +54,18 @@ test('the window scrollbar follows movement up to both edges without snapping ea
   let paint: FrameRequestCallback;
   t.mock.method(win, 'requestAnimationFrame', (callback: FrameRequestCallback) => { paint = callback; return 1; });
   win.document.body.innerHTML = `
-    <div class="stackflow-next"><header class="stackflow-next-header"></header>
-      <div><div class="stackflow-next-content"><main></main></div><div hidden></div></div>
-      <footer class="stackflow-next-bottom"></footer></div>`;
+    <div class="stackflow-next"><div><div class="stackflow-next-content">
+      <main style="margin:70px 20px; padding:16px 8px 24px 6px; border:2px solid"></main>
+    </div><div hidden></div></div></div>`;
   const content = win.document.querySelector('.stackflow-next-content')! as unknown as HTMLElement;
   const thumb = content.nextElementSibling as HTMLElement;
   const main = content.querySelector('main')!;
   t.mock.method(main, 'getClientRects', () => ({ length: 1 }));
-  // The target begins below the header and ends before the document footer.
+  // The target's rect already leaves out its margins.
   t.mock.method(main, 'getBoundingClientRect', () => new win.DOMRect(20, 90 - offset, 360, 1540));
-  t.mock.method(win.document.querySelector('header')!, 'getBoundingClientRect', () => new win.DOMRect(0, 0, 400, 50));
-  t.mock.method(win.document.querySelector('footer')!, 'getBoundingClientRect', () => new win.DOMRect(0, 630, 400, 70));
+  const start = 90 + 16 + 2;
+  const end = 90 + 1540 - 1200 - 24 - 2;
+  const railHeight = end - start;
 
   const scrolled: HTMLElement[] = [];
   const controller = attachWindowScroll(content, 'main', element => scrolled.push(element), thumb);
@@ -79,31 +80,31 @@ test('the window scrollbar follows movement up to both edges without snapping ea
     const size = parseFloat(thumb.style.height);
     assert.equal(controller.getElement(), root);
     assert.equal(thumb.hidden, false);
-    assert.equal(thumb.style.right, '23px');
-    assert.equal(thumbTop(), 50);
+    assert.equal(thumb.style.right, '33px');
+    assert.equal(thumbTop(), start);
     assert.equal(thumb.hasAttribute('data-stackflow-scrolling'), false);
-    assert.ok(Math.abs(size - 580 ** 2 / 1780) < 0.001);
+    assert.ok(Math.abs(size - railHeight ** 2 / (railHeight + 1200)) < 0.001);
 
     updateOffset(0.5);
-    assert.ok(thumbTop() > 50);
+    assert.ok(thumbTop() > start);
     assert.equal(thumb.hasAttribute('data-stackflow-scrolling'), true);
 
     updateOffset(600);
     assert.equal(parseFloat(thumb.style.height), size);
-    assert.ok(Math.abs(thumbTop() - (50 + (580 - size) / 2)) < 0.001);
+    assert.ok(Math.abs(thumbTop() - (start + (railHeight - size) / 2)) < 0.001);
 
     updateOffset(1199.5);
     assert.equal(parseFloat(thumb.style.height), size);
-    assert.ok(thumbTop() + size < 630);
+    assert.ok(thumbTop() + size < end);
 
     updateOffset(1200);
-    assert.ok(Math.abs(thumbTop() + size - 630) < 0.001);
+    assert.ok(Math.abs(thumbTop() + size - end) < 0.001);
 
     for (const edge of [-60, 1260]) {
       updateOffset(edge);
       const height = parseFloat(thumb.style.height);
       assert.ok(height < size);
-      assert.ok(Math.abs(thumbTop() - (edge < 0 ? 50 : 630 - height)) < 0.001);
+      assert.ok(Math.abs(thumbTop() - (edge < 0 ? start : end - height)) < 0.001);
     }
     assert.deepEqual(scrolled, [root, root, root, root, root, root]);
   } finally {
@@ -209,7 +210,9 @@ for (const mode of ['window', 'container']) {
       clientHeight: { value: 664 }, clientWidth: { value: 346 }, scrollHeight: { value: 3203 },
     });
     t.mock.method(target, 'getClientRects', () => ({ length: 1 }));
-    t.mock.method(target, 'getBoundingClientRect', () => new win.DOMRect(22, 0, 346, 664));
+    t.mock.method(target, 'getBoundingClientRect', () => mode === 'window'
+      ? new win.DOMRect(22, -offset, 346, 3203)
+      : new win.DOMRect(22, 0, 346, 664));
     t.mock.method(win.document.querySelector('#top')!, 'getBoundingClientRect', () => new win.DOMRect(0, 0, 390, 79));
     t.mock.method(win.document.querySelector('#bottom')!, 'getBoundingClientRect', () => new win.DOMRect(0, 561, 390, 103));
     t.mock.method(content.parentElement!, 'getBoundingClientRect', () => new win.DOMRect(0, 0, 390, 664));
