@@ -13,6 +13,8 @@
   font-size: 15px;
 }
 
+.stays-app:has(> .stackflow-next) { height: auto; min-height: 100dvh; }
+
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .plain-shell { display: flex; flex-direction: column; height: 100%; }

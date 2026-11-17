@@ -9,7 +9,16 @@
 .stackflow-next-content{height:100%}
 html[data-stackflow-animating] .stackflow-next-content:not([data-stackflow-slide-staged]){view-transition-name:stackflow-next-content}
 .stackflow-next-content,:where([data-stackflow-scroll-target]){overflow:auto;overscroll-behavior:contain}
+.stackflow-next-content,[data-stackflow-scroll-target]{scrollbar-width:none}
+.stackflow-next-content::-webkit-scrollbar,[data-stackflow-scroll-target]::-webkit-scrollbar{display:none}
 .stackflow-next-content[data-stackflow-scroll-delegated]{overflow:clip}
+.stackflow-next-scrollbar{
+  position:absolute;top:0;right:3px;width:3px;z-index:3;border-radius:3px;
+  background:var(--stackflow-scrollbar-color,color-mix(in srgb, CanvasText 36%, transparent));pointer-events:none
+}
+.stackflow-next-scrollbar[hidden],
+html[data-stackflow-animating] .stackflow-next-scrollbar,
+.stackflow-next-content:is([data-stackflow-slide-staged],[data-stackflow-slide-incoming]) ~ .stackflow-next-scrollbar{display:none}
 .stackflow-next :where(a,button,[role=button], [data-app-control]){-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;user-select:none}
 .stackflow-next :where(input,textarea,[contenteditable=true],[data-selectable]){user-select:text;-webkit-touch-callout:default}
 /* Only the body participates; fixed slots and the document stay live. */
@@ -65,6 +74,18 @@ html[data-stackflow-direction][data-stackflow-modal=exit]::view-transition-new(s
 }
 
 .stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:clip}.stackflow-next-header,.stackflow-next-footer,.stackflow-next-persistent{flex:none}
+html:has(.stackflow-next[data-stackflow-scroll-mode=window]){scrollbar-width:none}
+html:has(.stackflow-next[data-stackflow-scroll-mode=window])::-webkit-scrollbar{display:none}
+.stackflow-next[data-stackflow-scroll-mode=window]{height:auto;min-height:100dvh;--stackflow-slide-y:0 100dvh}
+[data-stackflow-scroll-mode=window] > .stackflow-next-viewport{display:flex;flex-direction:column;flex:1 0 auto;overflow:visible}
+[data-stackflow-scroll-mode=window] .stackflow-next-content:not([data-stackflow-slide-snapshot]){flex:1 0 auto;height:auto;overflow:visible;overscroll-behavior:auto}
+[data-stackflow-scroll-mode=window] > .stackflow-next-header,
+[data-stackflow-scroll-mode=window] > .stackflow-next-bottom{
+  position:sticky;z-index:5;flex:none;background:var(--stackflow-background,Canvas)
+}
+[data-stackflow-scroll-mode=window] > .stackflow-next-header{top:0}
+[data-stackflow-scroll-mode=window] > .stackflow-next-bottom{bottom:0}
+[data-stackflow-scroll-mode=window] .stackflow-next-scrollbar{position:fixed;z-index:4}
 /* Keep controls responsive while the browser paints the visual snapshot layer. */
 html[data-stackflow-direction]::view-transition{pointer-events:none}
 html[data-stackflow-direction]::view-transition-group(*),

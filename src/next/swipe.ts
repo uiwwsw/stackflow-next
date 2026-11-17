@@ -53,9 +53,11 @@ export function attachSwipeBack(engine: NavigationEngine, content: HTMLElement, 
     const background = previous.cloneNode(true) as HTMLElement;
     background.inert = true;
     background.setAttribute('aria-hidden', 'true');
+    if (!background.hasAttribute('data-stackflow-window-snapshot')) {
+      background.style.position = 'absolute';
+      background.style.inset = '0';
+    }
     Object.assign(background.style, {
-      position: 'absolute',
-      inset: '0',
       viewTransitionName: 'none',
       pointerEvents: 'none',
       transform: 'translateX(-25%)',
