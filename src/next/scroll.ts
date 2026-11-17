@@ -31,12 +31,15 @@ function paintThumb(thumb: HTMLElement, track: {top: number; right: number; heig
   const normalHeight = Math.min(track.height, Math.max(12, track.height ** 2 / (track.height + scrollRange)));
   const height = Math.max(Math.min(8, normalHeight), normalHeight - Math.abs(offset - clamped) / 2);
   const travel = track.height - height;
-  thumb.style.height = `${height}px`;
-  thumb.style.right = `${track.right + 3}px`;
-  thumb.style.transform = `translateY(${track.top + clamped / scrollRange * travel}px)`;
+  // Track geometry is in viewport pixels. CSS lengths are scaled again by
+  // the thumb's effective zoom, including when inherited from an ancestor.
+  const zoom = thumb.currentCSSZoom || 1;
+  thumb.style.height = `${height / zoom}px`;
+  thumb.style.right = `${track.right / zoom + 3}px`;
+  thumb.style.transform = `translateY(${(track.top + clamped / scrollRange * travel) / zoom}px)`;
   if (rootTimeline) {
-    thumb.style.setProperty('--stackflow-scrollbar-start', `${track.top}px`);
-    thumb.style.setProperty('--stackflow-scrollbar-end', `${track.top + travel}px`);
+    thumb.style.setProperty('--stackflow-scrollbar-start', `${track.top / zoom}px`);
+    thumb.style.setProperty('--stackflow-scrollbar-end', `${(track.top + travel) / zoom}px`);
   }
 }
 
@@ -57,7 +60,8 @@ function scrollbarActivity(win: Window, thumb: HTMLElement) {
 
 function contentBox(element: HTMLElement, bounds: ScrollBounds, borderBox: boolean): ScrollBounds {
   const style = element.ownerDocument.defaultView!.getComputedStyle(element);
-  const px = (value: string) => parseFloat(value) || 0;
+  const zoom = element.currentCSSZoom || 1;
+  const px = (value: string) => (parseFloat(value) || 0) * zoom;
   return {
     top: bounds.top + px(style.paddingTop) + (borderBox ? px(style.borderTopWidth) : 0),
     right: bounds.right - px(style.paddingRight) - (borderBox ? px(style.borderRightWidth) : 0),
@@ -84,12 +88,16 @@ function paintElementScrollbar(thumb: HTMLElement, element: HTMLElement,
   excludeChrome?: (track: ScrollBounds) => void, target?: HTMLElement) {
   const rect = element.getBoundingClientRect();
   const { clientHeight, clientLeft, clientTop, clientWidth, scrollHeight, scrollTop } = element;
-  const range = scrollHeight - clientHeight;
+  const zoom = element.currentCSSZoom || 1;
+  const range = (scrollHeight - clientHeight) * zoom;
+  const offset = scrollTop * zoom;
+  const top = rect.top + clientTop * zoom;
+  const left = rect.left + clientLeft * zoom;
   const scrollport = {
-    top: rect.top + clientTop,
-    bottom: rect.top + clientTop + clientHeight,
-    left: rect.left + clientLeft,
-    right: rect.left + clientLeft + clientWidth,
+    top,
+    bottom: top + clientHeight * zoom,
+    left,
+    right: left + clientWidth * zoom,
   };
   const track = {
     top: Math.max(bounds.top, scrollport.top),
@@ -98,13 +106,13 @@ function paintElementScrollbar(thumb: HTMLElement, element: HTMLElement,
     right: Math.min(bounds.right, scrollport.right),
   };
   if (target === element) fitTrack(track, contentBox(element, scrollport, false), 0, 0);
-  else if (target) fitTrack(track, contentBox(target, target.getBoundingClientRect(), true), scrollTop, range);
+  else if (target) fitTrack(track, contentBox(target, target.getBoundingClientRect(), true), offset, range);
   excludeChrome?.(track);
   paintThumb(thumb, {
     top: track.top - origin.top, right: origin.right - track.right,
     height: track.right > track.left ? track.bottom - track.top : 0,
   },
-    range, scrollTop);
+    range, offset);
 }
 
 function visualBounds(content: HTMLElement): ScrollBounds {

@@ -107,6 +107,16 @@ test('the window scrollbar uses the target content box up to both native scroll 
       assert.ok(Math.abs(thumbTop() - (edge < 0 ? start : end - height)) < 0.001);
     }
     assert.deepEqual(scrolled, [root, root, root, root, root, root]);
+
+    const zoom = 1.17;
+    Object.defineProperty(thumb, 'currentCSSZoom', { value: zoom });
+    updateOffset(1199.5);
+    assert.ok((thumbTop() + parseFloat(thumb.style.height)) * zoom < end);
+    updateOffset(1200);
+    const cssEnd = parseFloat(thumb.style.getPropertyValue('--stackflow-scrollbar-end'));
+    const zoomedHeight = parseFloat(thumb.style.height);
+    assert.ok(Math.abs((thumbTop() + zoomedHeight) * zoom - end) < 0.001);
+    assert.ok(Math.abs((cssEnd + zoomedHeight) * zoom - end) < 0.001);
   } finally {
     controller.dispose();
   }
