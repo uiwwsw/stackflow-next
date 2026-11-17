@@ -103,18 +103,19 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     const thumb = scrollbar.current;
     if (!content || !thumb) return;
     const capture = (element: HTMLElement) => engineRef.current?.capture(element);
+    const fixedSelectors = fixed.current.map(target => typeof target === 'string' ? target : target.selector);
     // Let the initial route hydrate before marking a descendant scroll target.
     const frame = window.requestAnimationFrame(() => {
       scroll.current = scrollMode === 'window'
-        ? attachWindowScroll(content, scrollTarget, capture, thumb)
-        : attachScrollViewport(content, scrollTarget, capture, element => engineRef.current?.restoreScroll(element), thumb);
+        ? attachWindowScroll(content, scrollTarget, capture, thumb, fixedSelectors)
+        : attachScrollViewport(content, scrollTarget, capture, element => engineRef.current?.restoreScroll(element), thumb, fixedSelectors);
     });
     return () => {
       window.cancelAnimationFrame(frame);
       scroll.current?.dispose();
       scroll.current = null;
     };
-  },[scrollTarget,scrollMode]);
+  },[scrollTarget,scrollMode,fixedTargets]);
   useLayoutEffect(()=>{
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');

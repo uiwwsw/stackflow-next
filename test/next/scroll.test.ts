@@ -181,3 +181,59 @@ test('the scrollbar follows the document after the inner scroller reaches its ed
     controller.dispose();
   }
 });
+
+for (const mode of ['window', 'container']) {
+  test(`the ${mode} scrollbar stays between fixed bars for its entire travel`, t => {
+    const win = new Window();
+    const root = win.document.documentElement;
+    Object.defineProperties(root, {
+      clientHeight: { value: 664 }, clientWidth: { value: 390 }, scrollHeight: { value: 3203 },
+    });
+    Object.defineProperty(win, 'visualViewport', { value: undefined });
+    let offset = 0;
+    Object.defineProperty(win, 'scrollY', { get: () => offset });
+    let paint: FrameRequestCallback;
+    t.mock.method(win, 'requestAnimationFrame', (callback: FrameRequestCallback) => { paint = callback; return 1; });
+    win.document.body.innerHTML = `
+      <div class="stackflow-next">
+        <div class="stackflow-next-header"><div id="top" style="position:fixed;visibility:visible"></div></div>
+        <div><div class="stackflow-next-content">
+          <main style="overflow-y:visible"></main>
+          <div id="bottom" style="position:fixed;visibility:visible"></div>
+        </div><div hidden></div></div>
+      </div>`;
+    const content = win.document.querySelector('.stackflow-next-content')! as unknown as HTMLElement;
+    const thumb = content.nextElementSibling as HTMLElement;
+    const target = content.querySelector('main')!;
+    Object.defineProperties(target, {
+      clientHeight: { value: 664 }, clientWidth: { value: 346 }, scrollHeight: { value: 3203 },
+    });
+    t.mock.method(target, 'getClientRects', () => ({ length: 1 }));
+    t.mock.method(target, 'getBoundingClientRect', () => new win.DOMRect(22, 0, 346, 664));
+    t.mock.method(win.document.querySelector('#top')!, 'getBoundingClientRect', () => new win.DOMRect(0, 0, 390, 79));
+    t.mock.method(win.document.querySelector('#bottom')!, 'getBoundingClientRect', () => new win.DOMRect(0, 561, 390, 103));
+    t.mock.method(content.parentElement!, 'getBoundingClientRect', () => new win.DOMRect(0, 0, 390, 664));
+
+    const controller = mode === 'window'
+      ? attachWindowScroll(content, 'main', () => {}, thumb, ['#bottom'])
+      : attachScrollViewport(content, 'main', () => {}, () => {}, thumb, ['#bottom']);
+    try {
+      for (const next of [0, 1, 2499, 2539, 2499, 0]) {
+        offset = next;
+        target.scrollTop = next;
+        if (mode === 'window') win.dispatchEvent(new win.Event('scroll'));
+        else target.dispatchEvent(new win.Event('scroll') as unknown as Event);
+        paint!(0);
+        const expectedHeight = 482 ** 2 / (482 + 2539);
+        const height = parseFloat(thumb.style.height);
+        const top = parseFloat(thumb.style.transform.slice('translateY('.length));
+        assert.equal(thumb.hidden, false);
+        assert.equal(thumb.style.right, '25px');
+        assert.ok(Math.abs(height - expectedHeight) < 0.001);
+        assert.ok(Math.abs(top - (79 + (482 - height) * next / 2539)) < 0.001);
+      }
+    } finally {
+      controller.dispose();
+    }
+  });
+}

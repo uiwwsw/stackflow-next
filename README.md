@@ -241,9 +241,13 @@ The document scrolls by default. Existing calls to `window.scrollTo()` and
 `window.scrollBy()`, reads of `window.scrollY`, and window `scroll` listeners
 work with Stackflow. Stackflow hides the browser's document scrollbar and
 draws a vertical thumb aligned to the right edge of `scrollTarget`. The track
-runs between the sticky slots. It stays the same height while the selected
-content scrolls past it. Thumb size and travel use the document's actual
-scroll range, so the thumb reaches the track's bottom at the end of the page.
+uses the visible space between the header and footer. It excludes both the
+provider's sticky slots and CSS `position: fixed` bars inside those slots.
+Inside the provider, a fixed `header`, `footer`, `banner` or `contentinfo`, or
+an element identified by `fixedTargets` or `data-stackflow-fixed-key`, also
+limits the track when it covers its edge. Thumb size and travel use that
+visible height and the native scroll range, so the thumb reaches the track's
+bottom at the end of the page.
 With no single visible match, Stackflow uses the provider body's right edge.
 If existing CSS makes the selected area an independent native scroller,
 the scrollbar follows that element while it scrolls and switches to the
@@ -263,6 +267,9 @@ handles wheel and touch input, momentum, and elastic overscroll where
 supported. The thumb compresses at the edge when the browser reports an
 elastic offset. Set `--stackflow-scrollbar-color` on the provider to set its
 color.
+
+If the app positions its own bars with CSS `position: fixed`, reserve their
+heights in the layout so the first and last content remain reachable.
 
 ### Use an independent scroll container
 

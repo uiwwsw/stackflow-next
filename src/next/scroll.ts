@@ -2,6 +2,8 @@ const targetAttribute = 'data-stackflow-scroll-target';
 const delegatedAttribute = 'data-stackflow-scroll-delegated';
 const nativeScrollbarAttribute = 'data-stackflow-native-scrollbar-hidden';
 
+type ScrollBounds = { top: number; right: number; bottom: number; left: number };
+
 function resolveTarget(content: HTMLElement, selector?: string) {
   if (selector === undefined) return { element: content };
   try {
@@ -54,32 +56,100 @@ function scrollbarActivity(win: Window, thumb: HTMLElement) {
 }
 
 function paintElementScrollbar(thumb: HTMLElement, element: HTMLElement,
-  bounds: {top: number; right: number; bottom: number; left: number}, origin: {top: number; right: number} = bounds) {
+  bounds: ScrollBounds, origin: {top: number; right: number} = bounds,
+  excludeChrome?: (track: ScrollBounds) => void) {
   const rect = element.getBoundingClientRect();
   const { clientHeight, clientLeft, clientTop, clientWidth, scrollHeight, scrollTop } = element;
-  const top = Math.max(bounds.top, rect.top + clientTop);
-  const bottom = Math.min(bounds.bottom, rect.top + clientTop + clientHeight);
-  const left = Math.max(bounds.left, rect.left + clientLeft);
-  const right = Math.min(bounds.right, rect.left + clientLeft + clientWidth);
-  paintThumb(thumb, { top: top - origin.top, right: origin.right - right, height: right > left ? bottom - top : 0 },
+  const track = {
+    top: Math.max(bounds.top, rect.top + clientTop),
+    bottom: Math.min(bounds.bottom, rect.top + clientTop + clientHeight),
+    left: Math.max(bounds.left, rect.left + clientLeft),
+    right: Math.min(bounds.right, rect.left + clientLeft + clientWidth),
+  };
+  excludeChrome?.(track);
+  paintThumb(thumb, {
+    top: track.top - origin.top, right: origin.right - track.right,
+    height: track.right > track.left ? track.bottom - track.top : 0,
+  },
     scrollHeight - clientHeight, scrollTop);
 }
 
-function windowViewportBounds(content: HTMLElement) {
+function visualBounds(content: HTMLElement): ScrollBounds {
   const doc = content.ownerDocument;
   const win = doc.defaultView!;
   const viewport = win.visualViewport;
   const top = viewport?.offsetTop ?? 0;
   const left = viewport?.offsetLeft ?? 0;
-  const bottom = top + (viewport?.height ?? doc.documentElement.clientHeight);
-  const right = left + (viewport?.width ?? doc.documentElement.clientWidth);
+  return {
+    top, left,
+    bottom: top + (viewport?.height ?? doc.documentElement.clientHeight),
+    right: left + (viewport?.width ?? doc.documentElement.clientWidth),
+  };
+}
+
+function windowViewportBounds(content: HTMLElement, viewport = visualBounds(content)) {
   const provider = content.parentElement?.parentElement;
   const header = provider?.querySelector(':scope > .stackflow-next-header');
   const footer = provider?.querySelector(':scope > .stackflow-next-bottom');
   return {
-    left, right,
-    top: Math.max(top, header?.getBoundingClientRect().bottom ?? top),
-    bottom: Math.min(bottom, footer?.getBoundingClientRect().top ?? bottom),
+    ...viewport,
+    top: Math.max(viewport.top, header?.getBoundingClientRect().bottom ?? viewport.top),
+    bottom: Math.min(viewport.bottom, footer?.getBoundingClientRect().top ?? viewport.bottom),
+  };
+}
+
+function fixedChrome(provider: HTMLElement, selectors: readonly string[]) {
+  const win = provider.ownerDocument.defaultView!;
+  const elements = new Set(provider.querySelectorAll(
+    'header,footer,[role=banner],[role=contentinfo],[data-stackflow-fixed-key],'
+    + ':scope > .stackflow-next-header *, :scope > .stackflow-next-bottom *',
+  ));
+  for (const selector of selectors) {
+    try {
+      for (const element of provider.querySelectorAll(selector)) elements.add(element);
+    } catch { /* Ignore invalid selectors just as the transition logic does. */ }
+  }
+  const chrome = new Set<Element>();
+  for (const element of elements) {
+    if (element.closest('.stackflow-next') !== provider || element.closest('[data-stackflow-slide-snapshot]')) continue;
+    const style = win.getComputedStyle(element);
+    if (style.position === 'fixed' && style.visibility === 'visible') chrome.add(element);
+  }
+  return chrome;
+}
+
+function excludeFixedChrome(bounds: ScrollBounds, viewport: ScrollBounds, chrome: ReturnType<typeof fixedChrome>) {
+  const railX = bounds.right - 4.5;
+  const centerX = (bounds.left + bounds.right) / 2;
+  for (const element of chrome) {
+    const rect = element.getBoundingClientRect();
+    if (rect.height <= 0 || rect.left > centerX || rect.right < railX ||
+        rect.bottom <= viewport.top || rect.top >= viewport.bottom) continue;
+    const gapAbove = rect.top - viewport.top;
+    const gapBelow = viewport.bottom - rect.bottom;
+    if (gapAbove <= 0 && gapBelow <= 0) continue;
+    if (gapAbove <= gapBelow) bounds.top = Math.max(bounds.top, rect.bottom);
+    else bounds.bottom = Math.min(bounds.bottom, rect.top);
+  }
+}
+
+function observeFixedChrome(content: HTMLElement, selectors: readonly string[], schedule: () => void) {
+  const provider = content.closest<HTMLElement>('.stackflow-next');
+  const win = content.ownerDocument.defaultView!;
+  const resize = new win.ResizeObserver(schedule);
+  let chrome = new Set<Element>();
+  return {
+    refresh() {
+      if (!provider) return;
+      const next = fixedChrome(provider, selectors);
+      for (const element of chrome) if (!next.has(element)) resize.unobserve(element);
+      for (const element of next) if (!chrome.has(element)) resize.observe(element);
+      chrome = next;
+    },
+    exclude(track: ScrollBounds) {
+      if (chrome.size > 0) excludeFixedChrome(track, visualBounds(content), chrome);
+    },
+    dispose() { resize.disconnect(); },
   };
 }
 
@@ -103,10 +173,11 @@ export function sizeWindowScrollSnapshot(snapshot: HTMLElement, bounds: DOMRect)
 }
 
 export function attachWindowScroll(content: HTMLElement, selector: string | undefined,
-  onScroll: (element: HTMLElement) => void, thumb: HTMLElement) {
+  onScroll: (element: HTMLElement) => void, thumb: HTMLElement, fixedSelectors: readonly string[] = []) {
   const doc = content.ownerDocument;
   const win = doc.defaultView!;
   const viewport = win.visualViewport;
+  const provider = content.parentElement?.parentElement;
   const getElement = () => (doc.scrollingElement ?? doc.documentElement) as HTMLElement;
   const root = getElement();
   let nestedScroller: HTMLElement | undefined;
@@ -117,6 +188,7 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
   let dirty = true;
   let frame = 0;
   const activity = scrollbarActivity(win, thumb);
+  const chrome = observeFixedChrome(content, fixedSelectors, schedule);
 
   function selectedScroller() {
     for (let node: HTMLElement | null = target; node && node !== content; node = node.parentElement) {
@@ -129,6 +201,7 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
     frame = 0;
     if (dirty) {
       dirty = false;
+      chrome.refresh();
       const next = resolveTarget(content, selector).element;
       if (next !== target) {
         if (target !== content && target !== nestedScroller) resize.unobserve(target);
@@ -155,21 +228,22 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
     }
     const viewportBounds = windowViewportBounds(content);
     const rect = target.getBoundingClientRect();
-    const left = Math.max(viewportBounds.left, rect.left);
-    const right = Math.min(viewportBounds.right, rect.right);
+    viewportBounds.left = Math.max(viewportBounds.left, rect.left);
+    viewportBounds.right = Math.min(viewportBounds.right, rect.right);
     // A wheel or touch gesture can continue in the document after an inner
     // scroller reaches its edge. Use the source that actually moved.
     const scroller = root.scrollHeight > root.clientHeight ? activeScroller : nestedScroller ?? root;
     const documentScroll = scroller === root;
     thumb.toggleAttribute('data-stackflow-scrollbar-root', documentScroll);
     if (!documentScroll) {
-      paintElementScrollbar(thumb, scroller, { ...viewportBounds, left, right }, { top: 0, right: doc.documentElement.clientWidth });
+      paintElementScrollbar(thumb, scroller, viewportBounds, { top: 0, right: doc.documentElement.clientWidth }, chrome.exclude);
       return;
     }
-    // The target scrolls with the document. Its horizontal bounds position
-    // the rail, and the viewport and sticky slots determine its height.
-    const height = right > left ? viewportBounds.bottom - viewportBounds.top : 0;
-    paintThumb(thumb, { top: viewportBounds.top, right: doc.documentElement.clientWidth - right, height },
+    // The target moves with the document, so the visible viewport and the
+    // fixed bars supply the rail's stable vertical bounds.
+    chrome.exclude(viewportBounds);
+    const height = viewportBounds.right > viewportBounds.left ? viewportBounds.bottom - viewportBounds.top : 0;
+    paintThumb(thumb, { top: viewportBounds.top, right: doc.documentElement.clientWidth - viewportBounds.right, height },
       root.scrollHeight - root.clientHeight, win.scrollY, true);
   }
 
@@ -193,13 +267,12 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
   function invalidate() { dirty = true; schedule(); }
   const resize = new win.ResizeObserver(invalidate);
   const mutation = new win.MutationObserver(records => {
-    if (records.some(record => record.attributeName !== nativeScrollbarAttribute)) invalidate();
+    if (records.some(record => record.target !== thumb && record.attributeName !== nativeScrollbarAttribute)) invalidate();
   });
   resize.observe(content);
   resize.observe(doc.body);
-  const provider = content.parentElement?.parentElement;
   if (provider) for (const slot of provider.children) resize.observe(slot);
-  mutation.observe(content, { subtree: true, childList: true, attributes: selector !== undefined });
+  mutation.observe(provider ?? content, { subtree: true, childList: true, attributes: true });
   win.addEventListener('scroll', scrolled, { capture: true, passive: true });
   win.addEventListener('resize', invalidate);
   viewport?.addEventListener('resize', schedule);
@@ -209,6 +282,7 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
     getElement,
     dispose() {
       resize.disconnect();
+      chrome.dispose();
       mutation.disconnect();
       win.removeEventListener('scroll', scrolled, true);
       win.removeEventListener('resize', invalidate);
@@ -229,22 +303,32 @@ export function attachScrollViewport(
   onScroll: (element: HTMLElement) => void,
   onTargetReady: (element: HTMLElement) => void,
   thumb?: HTMLElement,
+  fixedSelectors: readonly string[] = [],
 ) {
   let element = content;
   element.addEventListener('scroll', scrolled, { passive: true });
   const win = content.ownerDocument.defaultView!;
   const activity = thumb && scrollbarActivity(win, thumb);
+  const chrome = thumb && observeFixedChrome(content, fixedSelectors, schedule);
   let previousOffset = content.scrollTop;
   let frame = 0;
   let dirty = true;
+  let chromeDirty = true;
   const warned = new Set<string>();
 
   function refreshTarget() {
     frame = 0;
+    if (chromeDirty) {
+      chromeDirty = false;
+      chrome?.refresh();
+    }
     const previous = element;
     const current = getElement();
     if (current !== previous && current !== content) onTargetReady(current);
-    if (thumb?.parentElement) paintElementScrollbar(thumb, current, thumb.parentElement.getBoundingClientRect());
+    if (thumb?.parentElement) {
+      const bounds = thumb.parentElement.getBoundingClientRect();
+      paintElementScrollbar(thumb, current, bounds, bounds, chrome?.exclude);
+    }
   }
 
   function schedule() {
@@ -262,12 +346,14 @@ export function attachScrollViewport(
 
   function invalidate() {
     dirty = true;
+    chromeDirty = true;
     schedule();
   }
 
   const resize = new win.ResizeObserver(invalidate);
   const mutation = new win.MutationObserver(records => {
-    if (records.some(record => record.attributeName !== targetAttribute && record.attributeName !== delegatedAttribute)) invalidate();
+    if (records.some(record => record.target !== thumb &&
+      record.attributeName !== targetAttribute && record.attributeName !== delegatedAttribute)) invalidate();
   });
 
   function getElement(refresh = false) {
@@ -299,7 +385,7 @@ export function attachScrollViewport(
   }
 
   resize.observe(content);
-  mutation.observe(content, { subtree: true, childList: true, characterData: true, attributes: true });
+  mutation.observe(content.closest('.stackflow-next') ?? content, { subtree: true, childList: true, characterData: true, attributes: true });
   content.addEventListener('load', invalidate, true);
   win.addEventListener('resize', invalidate);
   getElement();
@@ -309,6 +395,7 @@ export function attachScrollViewport(
     dispose() {
       mutation.disconnect();
       resize.disconnect();
+      chrome?.dispose();
       element.removeEventListener('scroll', scrolled);
       if (element !== content) element.removeAttribute(targetAttribute);
       content.removeAttribute(delegatedAttribute);
