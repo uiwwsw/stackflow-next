@@ -112,3 +112,72 @@ test('the window scrollbar follows movement up to both edges without snapping ea
   assert.equal(thumb.hidden, true);
   assert.equal(thumb.hasAttribute('data-stackflow-scrolling'), false);
 });
+
+test('the scrollbar follows the document after the inner scroller reaches its edge', t => {
+  const win = new Window();
+  const root = win.document.documentElement;
+  Object.defineProperties(root, {
+    clientHeight: { value: 600 }, clientWidth: { value: 400 }, scrollHeight: { value: 1800 },
+  });
+  Object.defineProperty(win, 'visualViewport', { value: undefined });
+  let offset = 0;
+  Object.defineProperty(win, 'scrollY', { get: () => offset });
+  let paint: FrameRequestCallback;
+  t.mock.method(win, 'requestAnimationFrame', (callback: FrameRequestCallback) => { paint = callback; return 1; });
+  win.document.body.innerHTML = `
+    <div class="stackflow-next"><header class="stackflow-next-header"></header>
+      <div><div class="stackflow-next-content"><main style="overflow-y:auto"></main></div><div hidden></div></div>
+      <footer class="stackflow-next-bottom"></footer></div>`;
+  const content = win.document.querySelector('.stackflow-next-content')! as unknown as HTMLElement;
+  const thumb = content.nextElementSibling as HTMLElement;
+  const inner = win.document.querySelector('main')!;
+  Object.defineProperties(inner, {
+    clientHeight: { value: 400 }, clientWidth: { value: 400 }, scrollHeight: { value: 1600 },
+  });
+  t.mock.method(inner, 'getClientRects', () => ({ length: 1 }));
+  t.mock.method(inner, 'getBoundingClientRect', () => new win.DOMRect(0, 270 - offset, 400, 400));
+  t.mock.method(win.document.querySelector('header')!, 'getBoundingClientRect', () => new win.DOMRect(0, 0, 400, 50));
+  t.mock.method(win.document.querySelector('footer')!, 'getBoundingClientRect', () => new win.DOMRect(0, 550, 400, 50));
+
+  const controller = attachWindowScroll(content, 'main', () => {}, thumb);
+  try {
+    paint!(0);
+    const usesDocument = () => thumb.hasAttribute('data-stackflow-scrollbar-root');
+    const thumbTop = () => parseFloat(thumb.style.transform.slice('translateY('.length));
+    const thumbHeight = () => parseFloat(thumb.style.height);
+    assert.equal(usesDocument(), true);
+    assert.equal(thumb.hasAttribute('data-stackflow-scrolling'), false);
+
+    inner.scrollTop = 1200;
+    inner.dispatchEvent(new win.Event('scroll'));
+    paint!(0);
+    assert.equal(usesDocument(), false);
+    assert.ok(Math.abs(thumbHeight() - 280 ** 2 / 1480) < 0.001);
+    assert.ok(Math.abs(thumbTop() + thumbHeight() - 550) < 0.001);
+
+    offset = 1200;
+    win.dispatchEvent(new win.Event('scroll'));
+    paint!(0);
+    assert.equal(usesDocument(), true);
+    assert.ok(Math.abs(thumbTop() + thumbHeight() - 550) < 0.001);
+
+    offset = 1199;
+    win.dispatchEvent(new win.Event('scroll'));
+    paint!(0);
+    assert.ok(thumbTop() + thumbHeight() < 550);
+
+    offset = 100;
+    win.dispatchEvent(new win.Event('scroll'));
+    inner.dispatchEvent(new win.Event('scroll'));
+    paint!(0);
+    assert.equal(usesDocument(), true);
+
+    inner.scrollTop = 1199;
+    inner.dispatchEvent(new win.Event('scroll'));
+    paint!(0);
+    assert.equal(usesDocument(), false);
+    assert.ok(thumbTop() + thumbHeight() < 550);
+  } finally {
+    controller.dispose();
+  }
+});

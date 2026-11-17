@@ -246,8 +246,9 @@ content scrolls past it. Thumb size and travel use the document's actual
 scroll range, so the thumb reaches the track's bottom at the end of the page.
 With no single visible match, Stackflow uses the provider body's right edge.
 If existing CSS makes the selected area an independent native scroller,
-its scrollbar follows that element's scroll position. The thumb appears
-while the vertical scroll position changes and fades shortly after it stops.
+the scrollbar follows that element while it scrolls and switches to the
+document when document scrolling takes over. The thumb is sized to the
+visible track and fades shortly after vertical scrolling stops.
 
 ```tsx
 <StackflowProvider scrollTarget="[data-app-scroll]"

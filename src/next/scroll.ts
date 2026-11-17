@@ -21,12 +21,12 @@ export function previewScrollElement(content: HTMLElement) {
 }
 
 function paintThumb(thumb: HTMLElement, track: {top: number; right: number; height: number},
-  visibleHeight: number, scrollRange: number, offset: number, rootTimeline = false) {
-  thumb.hidden = track.height <= 0 || visibleHeight <= 0 || scrollRange <= 0;
+  scrollRange: number, offset: number, rootTimeline = false) {
+  thumb.hidden = track.height <= 0 || scrollRange <= 0;
   if (thumb.hidden) return;
 
   const clamped = Math.min(scrollRange, Math.max(0, offset));
-  const normalHeight = Math.min(track.height, Math.max(12, track.height * visibleHeight / (visibleHeight + scrollRange)));
+  const normalHeight = Math.min(track.height, Math.max(12, track.height ** 2 / (track.height + scrollRange)));
   const height = Math.max(Math.min(8, normalHeight), normalHeight - Math.abs(offset - clamped) / 2);
   const travel = track.height - height;
   thumb.style.height = `${height}px`;
@@ -38,23 +38,18 @@ function paintThumb(thumb: HTMLElement, track: {top: number; right: number; heig
   }
 }
 
-function scrollbarActivity(win: Window, thumb: HTMLElement, offset: number) {
-  let previousOffset = offset;
+function scrollbarActivity(win: Window, thumb: HTMLElement) {
   let timer: number | undefined;
-  function reset(nextOffset: number) {
-    previousOffset = nextOffset;
-    win.clearTimeout(timer);
-    thumb.removeAttribute('data-stackflow-scrolling');
-  }
   return {
-    update(nextOffset: number) {
-      if (nextOffset === previousOffset) return;
-      previousOffset = nextOffset;
+    show() {
       thumb.setAttribute('data-stackflow-scrolling', '');
       win.clearTimeout(timer);
       timer = win.setTimeout(() => thumb.removeAttribute('data-stackflow-scrolling'), 450);
     },
-    reset,
+    reset() {
+      win.clearTimeout(timer);
+      thumb.removeAttribute('data-stackflow-scrolling');
+    },
   };
 }
 
@@ -67,7 +62,7 @@ function paintElementScrollbar(thumb: HTMLElement, element: HTMLElement,
   const left = Math.max(bounds.left, rect.left + clientLeft);
   const right = Math.min(bounds.right, rect.left + clientLeft + clientWidth);
   paintThumb(thumb, { top: top - origin.top, right: origin.right - right, height: right > left ? bottom - top : 0 },
-    clientHeight, scrollHeight - clientHeight, scrollTop);
+    scrollHeight - clientHeight, scrollTop);
 }
 
 function windowViewportBounds(content: HTMLElement) {
@@ -114,18 +109,20 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
   const viewport = win.visualViewport;
   const getElement = () => (doc.scrollingElement ?? doc.documentElement) as HTMLElement;
   const root = getElement();
-  let scroller = root;
+  let nestedScroller: HTMLElement | undefined;
+  let activeScroller = root;
+  let rootOffset = win.scrollY;
+  let nestedOffset = 0;
   let target = content;
   let dirty = true;
   let frame = 0;
-  const activity = scrollbarActivity(win, thumb, win.scrollY);
+  const activity = scrollbarActivity(win, thumb);
 
   function selectedScroller() {
     for (let node: HTMLElement | null = target; node && node !== content; node = node.parentElement) {
       if (node.clientHeight > 0 && node.scrollHeight > node.clientHeight &&
           /^(auto|scroll|overlay)$/.test(win.getComputedStyle(node).overflowY)) return node;
     }
-    return root;
   }
 
   function paint() {
@@ -134,28 +131,35 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
       dirty = false;
       const next = resolveTarget(content, selector).element;
       if (next !== target) {
-        if (target !== content && target !== scroller) resize.unobserve(target);
+        if (target !== content && target !== nestedScroller) resize.unobserve(target);
         target = next;
         if (target !== content) resize.observe(target);
       }
       const nextScroller = selectedScroller();
-      if (nextScroller !== scroller) {
-        if (scroller !== root) {
-          if (scroller !== target) resize.unobserve(scroller);
-          scroller.removeAttribute(nativeScrollbarAttribute);
+      if (nextScroller !== nestedScroller) {
+        if (nestedScroller) {
+          if (nestedScroller !== target) resize.unobserve(nestedScroller);
+          nestedScroller.removeAttribute(nativeScrollbarAttribute);
         }
-        scroller = nextScroller;
-        if (scroller !== root) {
-          scroller.setAttribute(nativeScrollbarAttribute, '');
-          if (scroller !== target) resize.observe(scroller);
+        if (activeScroller === nestedScroller) {
+          activeScroller = root;
+          activity.reset();
         }
-        activity.reset(scroller === root ? win.scrollY : scroller.scrollTop);
+        nestedScroller = nextScroller;
+        if (nestedScroller) {
+          nestedScroller.setAttribute(nativeScrollbarAttribute, '');
+          if (nestedScroller !== target) resize.observe(nestedScroller);
+          nestedOffset = nestedScroller.scrollTop;
+        }
       }
     }
     const viewportBounds = windowViewportBounds(content);
     const rect = target.getBoundingClientRect();
     const left = Math.max(viewportBounds.left, rect.left);
     const right = Math.min(viewportBounds.right, rect.right);
+    // A wheel or touch gesture can continue in the document after an inner
+    // scroller reaches its edge. Use the source that actually moved.
+    const scroller = root.scrollHeight > root.clientHeight ? activeScroller : nestedScroller ?? root;
     const documentScroll = scroller === root;
     thumb.toggleAttribute('data-stackflow-scrollbar-root', documentScroll);
     if (!documentScroll) {
@@ -166,17 +170,25 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
     // the rail, and the viewport and sticky slots determine its height.
     const height = right > left ? viewportBounds.bottom - viewportBounds.top : 0;
     paintThumb(thumb, { top: viewportBounds.top, right: doc.documentElement.clientWidth - right, height },
-      height, root.scrollHeight - root.clientHeight, win.scrollY, true);
+      root.scrollHeight - root.clientHeight, win.scrollY, true);
   }
 
   function schedule() { if (!frame) frame = win.requestAnimationFrame(paint); }
   function scrolled(event: Event) {
     const documentEvent = event.target === doc || event.target === win;
-    if (documentEvent) onScroll(root);
-    if (scroller === root ? documentEvent : event.target === scroller) {
-      activity.update(scroller === root ? win.scrollY : scroller.scrollTop);
+    if (documentEvent) {
+      onScroll(root);
+      if (win.scrollY !== rootOffset) {
+        rootOffset = win.scrollY;
+        activeScroller = root;
+        activity.show();
+      }
+    } else if (nestedScroller && event.target === nestedScroller && nestedScroller.scrollTop !== nestedOffset) {
+      nestedOffset = nestedScroller.scrollTop;
+      activeScroller = nestedScroller;
+      activity.show();
     }
-    if (documentEvent || event.target === scroller) schedule();
+    if (documentEvent || event.target === nestedScroller) schedule();
   }
   function invalidate() { dirty = true; schedule(); }
   const resize = new win.ResizeObserver(invalidate);
@@ -203,8 +215,8 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
       viewport?.removeEventListener('resize', schedule);
       viewport?.removeEventListener('scroll', schedule);
       win.cancelAnimationFrame(frame);
-      if (scroller !== root) scroller.removeAttribute(nativeScrollbarAttribute);
-      activity.reset(0);
+      nestedScroller?.removeAttribute(nativeScrollbarAttribute);
+      activity.reset();
       thumb.removeAttribute('data-stackflow-scrollbar-root');
       thumb.hidden = true;
     },
@@ -221,7 +233,8 @@ export function attachScrollViewport(
   let element = content;
   element.addEventListener('scroll', scrolled, { passive: true });
   const win = content.ownerDocument.defaultView!;
-  const activity = thumb && scrollbarActivity(win, thumb, content.scrollTop);
+  const activity = thumb && scrollbarActivity(win, thumb);
+  let previousOffset = content.scrollTop;
   let frame = 0;
   let dirty = true;
   const warned = new Set<string>();
@@ -240,7 +253,10 @@ export function attachScrollViewport(
 
   function scrolled() {
     onScroll(element);
-    activity?.update(element.scrollTop);
+    if (element.scrollTop !== previousOffset) {
+      previousOffset = element.scrollTop;
+      activity?.show();
+    }
     if (thumb) schedule();
   }
 
@@ -269,7 +285,8 @@ export function attachScrollViewport(
         element.removeAttribute(targetAttribute);
       }
       element = next;
-      activity?.reset(element.scrollTop);
+      previousOffset = element.scrollTop;
+      activity?.reset();
       content.toggleAttribute(delegatedAttribute, element !== content);
       if (element !== content) {
         element.setAttribute(targetAttribute, '');
@@ -298,7 +315,7 @@ export function attachScrollViewport(
       content.removeEventListener('load', invalidate, true);
       win.removeEventListener('resize', invalidate);
       win.cancelAnimationFrame(frame);
-      activity?.reset(0);
+      activity?.reset();
       if (thumb) thumb.hidden = true;
     },
   };
