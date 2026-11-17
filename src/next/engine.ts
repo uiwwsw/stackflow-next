@@ -130,6 +130,7 @@ export class NavigationEngine {
     private readonly skipSlideQueryKeys: () => readonly string[] = () => []) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   isPending = () => this.navigation !== null;
+  getScrollElement = () => this.scrollElement();
   private emit() { this.listeners.forEach(fn => fn()); }
   private remember(meta: {id: string; position: number}, url: string) {
     let entry = this.entries.get(meta.id);

@@ -84,8 +84,8 @@ export function Actions() {
   `replace(href, 'pop')` to slide in that direction while replacing the current
   history entry. With no direction, changes to only the query or hash switch
   directly even when the route has an animation override.
-- The browser scrolls the bounded content area and draws its native scrollbar
-  below the header and above the footer.
+- Stackflow draws a custom vertical scrollbar inside the active scroll area.
+  The browser handles scrolling and touch gestures in that area.
 - Control selection, callout and tap-highlight styling is scoped to controls;
   editable fields and `data-selectable` retain selection.
 
@@ -238,9 +238,12 @@ hash, or another query key also changes, the usual transition rules apply.
 ## Choose which area scrolls
 
 The `header`, `footer`, and `persistent` slots take up their own space. The
-remaining height is the provider body's native scroll viewport. The browser
-handles the scrollbar, touch momentum, and platform effects such as Safari's
-elastic overscroll. `fixedTargets` keeps selected elements still during route
+remaining height is the provider body's scroll viewport. Stackflow hides the
+browser scrollbar on the active container and draws its own vertical thumb
+inside that container when the content overflows. The browser still handles
+wheel and touch input, including momentum and elastic overscroll where
+available. Set `--stackflow-scrollbar-color` on the provider to change the
+thumb color. `fixedTargets` keeps selected elements still during route
 transitions. The page layout determines which elements are outside the scroll
 viewport.
 
@@ -258,11 +261,33 @@ that fills the space between the bars.
 </StackflowProvider>
 ```
 
-While the target is active, it owns native scrolling and scroll restoration.
+While the target is active, it owns scrolling, the custom scrollbar, and scroll restoration.
 Keep the selector unique within the visible screen. Hidden routes retained by
 Next do not count.
 An invalid selector or a selector with zero or multiple visible matches falls
 back to the provider body and logs a warning in development.
+
+Call `useStackScroll()` in a Client Component under the provider to move the
+active scroll container or read its coordinates.
+
+```tsx
+'use client';
+
+import { useStackScroll } from '@uiwwsw/stackflow-next';
+
+export function BackToTop() {
+  const scroll = useStackScroll();
+  return <button onClick={() => scroll.scrollTo({ top: 0, behavior: 'smooth' })}>
+    Back to top
+  </button>;
+}
+```
+
+`scrollBy(options)` moves relative to the current position. `getPosition()`
+returns `{ left, top }` in pixels. `getElement()` returns the DOM container
+for operations such as subscribing to its `scroll` event. Both getters return
+`null` until the provider is ready. Each call resolves the current target, so
+the same hook works after the active route changes.
 
 ## Keep shared UI mounted
 

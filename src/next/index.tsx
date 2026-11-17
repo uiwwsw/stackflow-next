@@ -70,6 +70,7 @@ export interface StackflowProviderProps {
 }
 export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
+  const scrollbar = useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
   const modals = useRef<readonly string[]>([]);
   const transitions = useRef<readonly RouteTransition[]>([]);
@@ -96,11 +97,18 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     }
   }, [transitionTarget]);
   useLayoutEffect(()=>{
-    if (!viewport.current) return;
-    const controller = attachScrollViewport(viewport.current, scrollTarget,
-      element => engineRef.current?.capture(element), element => engineRef.current?.restoreScroll(element));
-    scroll.current = controller;
-    return () => { controller.dispose(); scroll.current = null; };
+    const content = viewport.current;
+    if (!content) return;
+    // Let the initial route hydrate before marking a descendant scroll target.
+    const frame = window.requestAnimationFrame(() => {
+      scroll.current = attachScrollViewport(content, scrollTarget,
+        element => engineRef.current?.capture(element), element => engineRef.current?.restoreScroll(element), scrollbar.current ?? undefined);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      scroll.current?.dispose();
+      scroll.current = null;
+    };
   },[scrollTarget]);
   useLayoutEffect(()=>{
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
@@ -123,6 +131,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
         <div ref={viewport} className="stackflow-next-content">{children}</div>
+        <div ref={scrollbar} className="stackflow-next-scrollbar" aria-hidden="true" hidden />
       </div>
       {persistent != null && typeof persistent !== 'boolean' && <div className="stackflow-next-persistent">{persistent}</div>}
       {footer && <div className="stackflow-next-footer">{footer}</div>}
@@ -144,6 +153,20 @@ export function useStackRouter() {
     forward(){if(engine)engine.navigate('push',null,()=>router.forward());else router.forward();},
     prefetch:router.prefetch, refresh:router.refresh,
   }),[engine,router]);
+}
+
+/** Read or move the provider's current scroll container. */
+export function useStackScroll() {
+  const engine = useEngine();
+  return useMemo(() => ({
+    getElement: () => engine?.getScrollElement() ?? null,
+    getPosition() {
+      const element = engine?.getScrollElement();
+      return element ? { left: element.scrollLeft, top: element.scrollTop } : null;
+    },
+    scrollTo(options: ScrollToOptions) { engine?.getScrollElement()?.scrollTo(options); },
+    scrollBy(options: ScrollToOptions) { engine?.getScrollElement()?.scrollBy(options); },
+  }), [engine]);
 }
 export function useStack() {
   const engine=useEngine();

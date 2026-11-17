@@ -19,7 +19,7 @@ for (const subpath of ['.', './config', './dom', './style.css', './dom/style.css
   await Promise.all([access(resolve(installed,target)),access(resolve(installed,entry.types))]);
 }
 await writeFile(consumer+'/consumer.tsx',`
-import { StackflowProvider, StackLoading, StackLink, StackMotion, useStackRouter, type StackMotionProps } from '@uiwwsw/stackflow-next';
+import { StackflowProvider, StackLoading, StackLink, StackMotion, useStackRouter, useStackScroll, type StackMotionProps } from '@uiwwsw/stackflow-next';
 import { withStackflow } from '@uiwwsw/stackflow-next/config';
 export { createApelike } from '@uiwwsw/stackflow-next/dom';
 import '@uiwwsw/stackflow-next/style.css';
@@ -31,7 +31,8 @@ const motion: StackMotionProps = { open: true, enter: 'modal', exit: 'ios' };
 
 function Controls() {
   const router = useStackRouter();
-  return <><StackLink href={detail}>Detail</StackLink><button onClick={() => router.back()}>Back</button></>;
+  const scroll = useStackScroll();
+  return <><StackLink href={detail}>Detail</StackLink><button onClick={() => router.back()}>Back</button><button onClick={() => scroll.scrollTo({ top: 0 })}>Back to top</button></>;
 }
 
 export function Consumer() {
