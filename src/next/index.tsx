@@ -4,7 +4,7 @@ import Link, { type LinkProps } from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { NavigationEngine, safeHref, type RouteTransition, type SlideDirection } from './engine.js';
 import { attachSwipeBack } from './swipe.js';
-import { attachScrollViewport } from './scroll.js';
+import { attachScrollViewport, attachWindowScroll } from './scroll.js';
 import type { FixedTarget } from './fixed-targets.js';
 import { createSkeletonRouteMatcher, type SkeletonRoute } from './skeleton-routes.js';
 import { loadingMessage } from './loading-message.js';
@@ -42,7 +42,9 @@ export interface StackflowProviderProps {
   persistent?: ReactNode;
   animation?: 'ios' | 'none';
   preserveScroll?: boolean;
-  /** CSS selector for a single visible native scroll container inside the provider body. */
+  /** Scroll the browser document or a provider-owned container. Defaults to 'window'. */
+  scrollMode?: 'container' | 'window';
+  /** Select a scroll container, or the scrollbar's display area in window mode. */
   scrollTarget?: string;
   /** CSS selectors for shared elements inside the page that should not slide. */
   fixedTargets?: FixedTarget | readonly FixedTarget[];
@@ -68,7 +70,7 @@ export interface StackflowProviderProps {
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollTarget,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollMode='window',scrollTarget,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const scrollbar = useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
@@ -76,7 +78,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
   const transitions = useRef<readonly RouteTransition[]>([]);
   const skippedQueryKeys = useRef<readonly string[]>([]);
   const matchesSkeletonRoute = useRef<(href: string) => boolean>(() => false);
-  const scroll=useRef<ReturnType<typeof attachScrollViewport> | null>(null);
+  const scroll=useRef<ReturnType<typeof attachScrollViewport> | ReturnType<typeof attachWindowScroll> | null>(null);
   const engineRef=useRef<NavigationEngine | null>(null);
   const [engine,setEngine]=useState<NavigationEngine|null>(null);
   const router=useRouter();
@@ -98,26 +100,30 @@ export function StackflowProvider({children,header,footer,persistent,animation='
   }, [transitionTarget]);
   useLayoutEffect(()=>{
     const content = viewport.current;
-    if (!content) return;
+    const thumb = scrollbar.current;
+    if (!content || !thumb) return;
+    const capture = (element: HTMLElement) => engineRef.current?.capture(element);
     // Let the initial route hydrate before marking a descendant scroll target.
     const frame = window.requestAnimationFrame(() => {
-      scroll.current = attachScrollViewport(content, scrollTarget,
-        element => engineRef.current?.capture(element), element => engineRef.current?.restoreScroll(element), scrollbar.current ?? undefined);
+      scroll.current = scrollMode === 'window'
+        ? attachWindowScroll(content, scrollTarget, capture, thumb)
+        : attachScrollViewport(content, scrollTarget, capture, element => engineRef.current?.restoreScroll(element), thumb);
     });
     return () => {
       window.cancelAnimationFrame(frame);
       scroll.current?.dispose();
       scroll.current = null;
     };
-  },[scrollTarget]);
+  },[scrollTarget,scrollMode]);
   useLayoutEffect(()=>{
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
     const value=new NavigationEngine(window,()=>viewport.current,{animation,preserveScroll,timeout:navigationTimeout,maxEntries,waitForPage},
-      () => scroll.current?.getElement(true) ?? viewport.current, () => fixed.current, () => modals.current, href => matchesSkeletonRoute.current(href), () => transitions.current, () => skippedQueryKeys.current);
+      () => scrollMode === 'window' ? (document.scrollingElement ?? document.documentElement) as HTMLElement : scroll.current?.getElement(true) ?? viewport.current,
+      () => fixed.current, () => modals.current, href => matchesSkeletonRoute.current(href), () => transitions.current, () => skippedQueryKeys.current);
     const disconnect=value.connect(); engineRef.current=value; setEngine(value);
     return ()=>{ engineRef.current=null; disconnect(); value.dispose(); };
-  },[animation,preserveScroll,maxEntries,navigationTimeout,waitForPage]);
+  },[animation,preserveScroll,maxEntries,navigationTimeout,waitForPage,scrollMode]);
   useLayoutEffect(()=>{
     if(!engine)return;
     engine.setSwipeBackEnabled(swipeBack);
@@ -126,15 +132,18 @@ export function StackflowProvider({children,header,footer,persistent,animation='
   },[swipeBack,engine,router]);
   const message = locale && loadingMessage(locale);
   const fallback = message ? <span lang={locale} dir="auto">{message}</span> : defaultLoading;
+  const bottom = <>
+    {persistent != null && typeof persistent !== 'boolean' && <div className="stackflow-next-persistent">{persistent}</div>}
+    {footer && <div className="stackflow-next-footer">{footer}</div>}
+  </>;
   return <Context.Provider value={engine}><LoadingContext.Provider value={loading === undefined ? fallback : loading}>
-    <div className={`stackflow-next ${className}`} style={style}>
+    <div className={`stackflow-next ${className}`} data-stackflow-scroll-mode={scrollMode} style={style}>
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
         <div ref={viewport} className="stackflow-next-content">{children}</div>
         <div ref={scrollbar} className="stackflow-next-scrollbar" aria-hidden="true" hidden />
       </div>
-      {persistent != null && typeof persistent !== 'boolean' && <div className="stackflow-next-persistent">{persistent}</div>}
-      {footer && <div className="stackflow-next-footer">{footer}</div>}
+      {scrollMode === 'window' ? <div className="stackflow-next-bottom">{bottom}</div> : bottom}
     </div>
     <Suspense fallback={null}><RouteObserver engine={engine}/></Suspense>
   </LoadingContext.Provider></Context.Provider>;

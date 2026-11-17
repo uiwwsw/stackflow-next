@@ -41,6 +41,100 @@ function paintScrollbar(thumb: HTMLElement, element: HTMLElement) {
   thumb.style.transform = `translateY(${top - bounds.top + progress * (trackHeight - height)}px)`;
 }
 
+export function windowScrollBounds(content: HTMLElement, target = content) {
+  const doc = content.ownerDocument;
+  const win = doc.defaultView!;
+  const viewport = win.visualViewport;
+  const viewportTop = viewport?.offsetTop ?? 0;
+  const viewportLeft = viewport?.offsetLeft ?? 0;
+  const viewportBottom = viewportTop + (viewport?.height ?? doc.documentElement.clientHeight);
+  const viewportRight = viewportLeft + (viewport?.width ?? doc.documentElement.clientWidth);
+  const provider = content.parentElement?.parentElement;
+  const header = provider?.querySelector(':scope > .stackflow-next-header');
+  const footer = provider?.querySelector(':scope > .stackflow-next-bottom');
+  const rect = target.getBoundingClientRect();
+  const left = Math.max(viewportLeft, rect.left);
+  const top = Math.max(viewportTop, rect.top, header?.getBoundingClientRect().bottom ?? viewportTop);
+  const right = Math.min(viewportRight, rect.right);
+  const bottom = Math.min(viewportBottom, rect.bottom, footer?.getBoundingClientRect().top ?? viewportBottom);
+  return new win.DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+}
+
+export function sizeWindowScrollSnapshot(snapshot: HTMLElement, bounds: DOMRect) {
+  snapshot.dataset.stackflowWindowSnapshot = '';
+  Object.assign(snapshot.style, {
+    position: 'fixed', inset: 'auto', top: `${bounds.top}px`, left: `${bounds.left}px`,
+    height: `${bounds.height}px`, width: `${bounds.width}px`, overflow: 'hidden',
+  });
+}
+
+export function attachWindowScroll(content: HTMLElement, selector: string | undefined,
+  onScroll: (element: HTMLElement) => void, thumb: HTMLElement) {
+  const doc = content.ownerDocument;
+  const win = doc.defaultView!;
+  const viewport = win.visualViewport;
+  const getElement = () => (doc.scrollingElement ?? doc.documentElement) as HTMLElement;
+  let target = content;
+  let dirty = true;
+  let frame = 0;
+
+  function paint() {
+    frame = 0;
+    if (dirty) {
+      dirty = false;
+      const next = resolveTarget(content, selector).element;
+      if (next !== target) {
+        if (target !== content) resize.unobserve(target);
+        target = next;
+        if (target !== content) resize.observe(target);
+      }
+    }
+    const root = getElement();
+    const bounds = windowScrollBounds(content, target);
+    const range = root.scrollHeight - root.clientHeight;
+    thumb.hidden = range <= 0 || bounds.height <= 0 || bounds.width <= 0;
+    if (thumb.hidden) return;
+
+    const offset = win.scrollY;
+    const clamped = Math.min(range, Math.max(0, offset));
+    const normalHeight = Math.min(bounds.height, Math.max(24, bounds.height ** 2 / (bounds.height + range)));
+    const height = Math.max(Math.min(8, normalHeight), normalHeight - Math.abs(offset - clamped) / 2);
+    const top = bounds.top + clamped / range * (bounds.height - height);
+    thumb.style.height = `${height}px`;
+    thumb.style.right = `${doc.documentElement.clientWidth - bounds.right + 3}px`;
+    thumb.style.transform = `translateY(${top}px)`;
+  }
+
+  function schedule() { if (!frame) frame = win.requestAnimationFrame(paint); }
+  function scrolled() { onScroll(getElement()); schedule(); }
+  function invalidate() { dirty = true; schedule(); }
+  const resize = new win.ResizeObserver(invalidate);
+  const mutation = new win.MutationObserver(invalidate);
+  resize.observe(content);
+  resize.observe(doc.body);
+  const provider = content.parentElement?.parentElement;
+  if (provider) for (const slot of provider.children) resize.observe(slot);
+  mutation.observe(content, { subtree: true, childList: true, attributes: selector !== undefined });
+  win.addEventListener('scroll', scrolled, { passive: true });
+  win.addEventListener('resize', invalidate);
+  viewport?.addEventListener('resize', schedule);
+  viewport?.addEventListener('scroll', schedule);
+  schedule();
+  return {
+    getElement,
+    dispose() {
+      resize.disconnect();
+      mutation.disconnect();
+      win.removeEventListener('scroll', scrolled);
+      win.removeEventListener('resize', invalidate);
+      viewport?.removeEventListener('resize', schedule);
+      viewport?.removeEventListener('scroll', schedule);
+      win.cancelAnimationFrame(frame);
+      thumb.hidden = true;
+    },
+  };
+}
+
 export function attachScrollViewport(
   content: HTMLElement,
   selector: string | undefined,

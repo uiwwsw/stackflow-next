@@ -32,12 +32,12 @@ export function resolveFixedSelectors(targets: readonly FixedTarget[], from: str
   });
 }
 
-export function findFixedTargets(content: HTMLElement | null, selectors: readonly string[]) {
+export function findFixedTargets(content: HTMLElement | null, selectors: readonly string[], clip?: DOMRect) {
   const targets = new Set<HTMLElement>();
   if (!content || !selectors.length) return targets;
   const win = content.ownerDocument.defaultView;
   if (!win) return targets;
-  const bounds = content.getBoundingClientRect();
+  const bounds = clip ?? content.getBoundingClientRect();
   for (const selector of selectors) {
     if (!selector.trim()) continue;
     try {

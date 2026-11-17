@@ -6,7 +6,7 @@ const npm = 'https://www.npmjs.com/package/@uiwwsw/stackflow-next';
 const differences = [
   { topic: '화면 이동', plain: '다음 화면으로 즉시 바뀝니다.', stack: '다음 화면이 오른쪽에서 밀려 들어오고, 이전 화면은 뒤로 물러납니다.' },
   { topic: '브라우저 뒤로·앞으로', plain: '방향과 상관없이 즉시 바뀝니다.', stack: '뒤로가기는 반대 방향으로, 앞으로가기는 같은 방향으로 재생합니다. 주소와 방문 기록은 Next.js 그대로입니다.' },
-  { topic: '목록 스크롤', plain: '목록을 내려 보다가 상세에서 돌아오면 목록이 맨 위로 돌아가 있습니다.', stack: '화면마다 스크롤 위치를 기억해, 돌아오면 목록이 보던 자리에 있습니다.' },
+  { topic: '목록 스크롤', plain: '브라우저 기본 스크롤바를 사용합니다.', stack: '기존 window 스크롤을 사용하면서 본문에 맞춘 스크롤바를 표시합니다. 상세에서 돌아오면 목록 위치를 복원합니다.' },
   { topic: '느린 서버 응답', plain: '로딩 화면으로 먼저 바뀌고, 응답이 오면 다시 바뀝니다.', stack: '예약 화면이 준비될 때까지 지금 화면을 유지한 뒤, 한 번에 올라옵니다.' },
   { topic: '팝업형 화면', plain: '다른 화면과 같은 방식으로 바뀝니다.', stack: '지정한 경로는 아래에서 올라오고, 뒤로가기로 내려갑니다.' },
   { topic: '가장자리 스와이프', plain: '동작하지 않습니다.', stack: '왼쪽 가장자리를 끌면 이전 화면이 따라 나오고, 놓으면 뒤로 갑니다.' },
@@ -23,7 +23,7 @@ import '@uiwwsw/stackflow-next/style.css';
 export default function Layout({ children }) {
   return (
     <html lang="ko">
-      <body style={{ margin: 0, height: '100dvh' }}>
+      <body style={{ margin: 0 }}>
         <StackflowProvider swipeBack>{children}</StackflowProvider>
       </body>
     </html>

@@ -74,6 +74,18 @@ html[data-stackflow-direction][data-stackflow-modal=exit]::view-transition-new(s
 }
 
 .stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:clip}.stackflow-next-header,.stackflow-next-footer,.stackflow-next-persistent{flex:none}
+html:has(.stackflow-next[data-stackflow-scroll-mode=window]){scrollbar-width:none}
+html:has(.stackflow-next[data-stackflow-scroll-mode=window])::-webkit-scrollbar{display:none}
+.stackflow-next[data-stackflow-scroll-mode=window]{height:auto;min-height:100dvh;--stackflow-slide-y:0 100dvh}
+[data-stackflow-scroll-mode=window] > .stackflow-next-viewport{display:flex;flex-direction:column;flex:1 0 auto;overflow:visible}
+[data-stackflow-scroll-mode=window] .stackflow-next-content:not([data-stackflow-slide-snapshot]){flex:1 0 auto;height:auto;overflow:visible;overscroll-behavior:auto}
+[data-stackflow-scroll-mode=window] > .stackflow-next-header,
+[data-stackflow-scroll-mode=window] > .stackflow-next-bottom{
+  position:sticky;z-index:5;flex:none;background:var(--stackflow-background,Canvas)
+}
+[data-stackflow-scroll-mode=window] > .stackflow-next-header{top:0}
+[data-stackflow-scroll-mode=window] > .stackflow-next-bottom{bottom:0}
+[data-stackflow-scroll-mode=window] .stackflow-next-scrollbar{position:fixed;z-index:4}
 /* Keep controls responsive while the browser paints the visual snapshot layer. */
 html[data-stackflow-direction]::view-transition{pointer-events:none}
 html[data-stackflow-direction]::view-transition-group(*),

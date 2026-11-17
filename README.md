@@ -41,7 +41,7 @@ import { StackflowProvider } from '@uiwwsw/stackflow-next';
 import '@uiwwsw/stackflow-next/style.css';
 
 export default function Layout({ children }) {
-  return <html lang="en"><body style={{ margin: 0, height: '100dvh' }}>
+  return <html lang="en"><body style={{ margin: 0 }}>
     <StackflowProvider swipeBack preserveScroll>
       {children}
     </StackflowProvider>
@@ -49,7 +49,7 @@ export default function Layout({ children }) {
 }
 ```
 
-The provider needs a bounded height. Set `--stackflow-background` to an opaque
+Set `--stackflow-background` to an opaque
 color on the provider or an ancestor to match your theme. The live viewport,
 swipe preview and transition snapshots share this background. The browser's
 `Canvas` color backs the surface even if the theme color is transparent.
@@ -158,8 +158,8 @@ opened and down when leaving, including through browser Back and Forward.
 Open with `StackLink` or `useStackRouter().push()` and close with
 `useStackRouter().back()`. Rules match the app pathname. Fragments and trailing
 slashes in a destination do not affect the match. Motion applies to the provider's content area.
-For a viewport-sized popup, give the provider a viewport height and render the
-UI to cover its content area. Shared `header`, `footer`, and `persistent` slots
+For a viewport-sized popup, size its content to cover the visible body area.
+Shared `header`, `footer`, and `persistent` slots
 sit outside that area. Elements inside the content area participate in the
 modal transition, including elements configured in `fixedTargets`.
 
@@ -235,24 +235,38 @@ same pathname, including through `back()`, `forward()`, and the browser's
 history controls. The URL and history still update normally. If the pathname,
 hash, or another query key also changes, the usual transition rules apply.
 
-## Choose which area scrolls
+## Document scrolling and the custom scrollbar
 
-The `header`, `footer`, and `persistent` slots take up their own space. The
-remaining height is the provider body's scroll viewport. Stackflow hides the
-browser scrollbar on the active container and draws its own vertical thumb
-inside that container when the content overflows. The browser still handles
-wheel and touch input, including momentum and elastic overscroll where
-available. Set `--stackflow-scrollbar-color` on the provider to change the
-thumb color. `fixedTargets` keeps selected elements still during route
-transitions. The page layout determines which elements are outside the scroll
-viewport.
-
-For a bar that belongs to a single page, put it next to the scrolling element
-inside a bounded flex column. Set `scrollTarget` to the selector of the element
-that fills the space between the bars.
+The document scrolls by default. Existing calls to `window.scrollTo()` and
+`window.scrollBy()`, reads of `window.scrollY`, and window `scroll` listeners
+work with Stackflow. Stackflow hides the browser's document scrollbar and
+draws a vertical thumb inside the visible area specified by `scrollTarget`.
+It uses the document's actual scroll range and the target's visible height.
+With no single visible match, it uses the provider body for the display area.
 
 ```tsx
-<StackflowProvider scrollTarget="[data-app-scroll]">
+<StackflowProvider scrollTarget="[data-app-scroll]"
+  header={<PageHeader />} footer={<PageActions />}>
+  <main data-app-scroll>{children}</main>
+</StackflowProvider>
+```
+
+Let the provider and content grow with the page. The header sticks to the
+top, and `persistent` and `footer` stick together at the bottom. The browser
+handles wheel and touch input, momentum, and elastic overscroll where
+supported. The thumb compresses at the edge when the browser reports an
+elastic offset. Set `--stackflow-scrollbar-color` on the provider to set its
+color.
+
+### Use an independent scroll container
+
+Set `scrollMode="container"` to keep scrolling inside a bounded provider.
+In this mode, `scrollTarget` selects the element that scrolls. If it is omitted
+or has no single visible match, the provider body scrolls. Give the target a
+bounded height and keep the selector unique within the visible screen.
+
+```tsx
+<StackflowProvider scrollMode="container" scrollTarget="[data-app-scroll]">
   <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
     <header style={{ flex: 'none' }}><PageHeader /></header>
     <main data-app-scroll style={{ flex: 1, minHeight: 0 }}>{children}</main>
@@ -261,14 +275,7 @@ that fills the space between the bars.
 </StackflowProvider>
 ```
 
-While the target is active, it owns scrolling, the custom scrollbar, and scroll restoration.
-Keep the selector unique within the visible screen. Hidden routes retained by
-Next do not count.
-An invalid selector or a selector with zero or multiple visible matches falls
-back to the provider body and logs a warning in development.
-
-Call `useStackScroll()` in a Client Component under the provider to move the
-active scroll container or read its coordinates.
+A Client Component that works with either mode can call `useStackScroll()`.
 
 ```tsx
 'use client';
@@ -284,10 +291,9 @@ export function BackToTop() {
 ```
 
 `scrollBy(options)` moves relative to the current position. `getPosition()`
-returns `{ left, top }` in pixels. `getElement()` returns the DOM container
-for operations such as subscribing to its `scroll` event. Both getters return
-`null` until the provider is ready. Each call resolves the current target, so
-the same hook works after the active route changes.
+returns `{ left, top }` in pixels. `getElement()` returns the document's
+scrolling element or the active container. Both getters return `null` until
+the provider is ready.
 
 ## Keep shared UI mounted
 

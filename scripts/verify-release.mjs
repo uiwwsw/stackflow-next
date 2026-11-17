@@ -37,6 +37,7 @@ function Controls() {
 
 export function Consumer() {
   return <StackflowProvider
+    scrollMode="window"
     skeletonRoutes={[detail]}
     fixedTargets={{ selector: '[data-app-fixed]', exceptRoutes: [detail] }}
     scrollTarget="[data-app-scroll]"

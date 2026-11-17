@@ -1,6 +1,7 @@
 import { captureSlide } from './slide-fallback.js';
 import { aggregate, makeEvent, type DomainEvent, type Stack } from '@stackflow/core';
 import { matchesRoute, resolveFixedSelectors, routePathname, type FixedTarget } from './fixed-targets.js';
+import { sizeWindowScrollSnapshot, windowScrollBounds } from './scroll.js';
 
 export const HISTORY_KEY = '__stackflow_next_v1';
 /** Previous screens kept as swipe-back previews. */
@@ -101,11 +102,19 @@ export class NavigationEngine {
   }
   private saveVisual() {
     if (!this.swipeBackEnabled || this.hasFixedTargets()) return;
-    const el=this.viewport(), current=this.current;if(!current||!el)return;
-    const offset = this.scrollElement()?.scrollTop ?? 0;
-    current.visual=el.cloneNode(true) as HTMLElement;current.visual.dataset.stackflowScroll=String(offset);
-    delete current.visual.dataset.stackflowSlideStaged;
-    delete current.visual.dataset.stackflowSlideIncoming;
+    const content = this.viewport();
+    const current = this.current;
+    if (!current || !content) return;
+    const scroll = this.scrollElement();
+    const bounds = this.isWindowScroll(scroll) ? windowScrollBounds(content) : undefined;
+    if (bounds && (!bounds.width || !bounds.height)) return;
+    const offset = bounds ? bounds.top - content.getBoundingClientRect().top : scroll?.scrollTop ?? 0;
+    const visual = content.cloneNode(true) as HTMLElement;
+    if (bounds) sizeWindowScrollSnapshot(visual, bounds);
+    visual.dataset.stackflowScroll = String(offset);
+    delete visual.dataset.stackflowSlideStaged;
+    delete visual.dataset.stackflowSlideIncoming;
+    current.visual = visual;
   }
   // Swipe back only reveals screens below the current one. Keep the nearest
   // few so it still works after Back; a forward screen is recaptured on leave.
@@ -184,6 +193,8 @@ export class NavigationEngine {
     const initial = metadata(history.state) ?? this.fresh(0);
     replace.call(history, {...history.state, [HISTORY_KEY]: initial}, '', this.win.location.href);
     this.current = this.remember(initial, this.url());
+    const initialScroll = this.scrollElement();
+    if (this.isWindowScroll(initialScroll)) this.capture(initialScroll);
     this.renderedRoute = routeKey(this.win.location);
     this.historyIndex = this.readHistoryIndex();
     const oldRestoration = history.scrollRestoration;
@@ -313,9 +324,22 @@ export class NavigationEngine {
     };
     return this.cleanup;
   }
-  capture(element = this.scrollElement()) { if (this.current && element) this.current.scroll = element.scrollTop; }
+  private isWindowScroll(element: HTMLElement | null) {
+    return element === (this.win.document.scrollingElement ?? this.win.document.documentElement);
+  }
+  capture(element = this.scrollElement()) {
+    if (!this.current || !element) return;
+    const offset = element.scrollTop;
+    this.current.scroll = this.isWindowScroll(element)
+      ? Math.max(0, Math.min(element.scrollHeight - element.clientHeight, offset)) : offset;
+  }
   restoreScroll(element = this.scrollElement()) {
-    if (this.options.preserveScroll && element) element.scrollTop = this.current?.scroll ?? 0;
+    if (!this.options.preserveScroll || !element) return;
+    const top = this.current?.scroll ?? 0;
+    if (this.isWindowScroll(element)) {
+      if (this.win.scrollY !== top) this.win.scrollTo({ top, behavior: 'instant' });
+    }
+    else element.scrollTop = top;
   }
   private rebuild() {
     if (!this.current) return;

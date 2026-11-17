@@ -1,5 +1,6 @@
 import type { Direction } from './engine.js';
 import { findFixedTargets, pinForTransition } from './fixed-targets.js';
+import { sizeWindowScrollSnapshot, windowScrollBounds } from './scroll.js';
 
 export function captureSlide(
   content: HTMLElement,
@@ -10,13 +11,17 @@ export function captureSlide(
 ) {
   const parent = content.parentElement;
   if (!parent) return;
+  const doc = content.ownerDocument;
+  const windowScroll = scroll === (doc.scrollingElement ?? doc.documentElement);
+  const getBounds = () => windowScroll ? windowScrollBounds(content) : content.getBoundingClientRect();
+  const bounds = getBounds();
+  if (windowScroll && (!bounds.width || !bounds.height)) return;
   const visual = content.cloneNode(true) as HTMLElement;
-  const bounds = content.getBoundingClientRect();
-  const offset = scroll?.scrollTop ?? 0;
-  const fixedTargets = findFixedTargets(content, selectors);
+  const offset = windowScroll ? bounds.top - content.getBoundingClientRect().top : scroll?.scrollTop ?? 0;
+  const fixedTargets = findFixedTargets(content, selectors, bounds);
   const originals = new Map<HTMLElement, {original: HTMLElement; rect: DOMRect}>();
   let visualScroll = visual;
-  if (fixedTargets.size || (scroll && scroll !== content)) {
+  if (fixedTargets.size || (!windowScroll && scroll && scroll !== content)) {
     const cloned = visual.querySelectorAll<HTMLElement>('*');
     content.querySelectorAll<HTMLElement>('*').forEach((element, index) => {
       if (element === scroll) visualScroll = cloned[index];
@@ -29,6 +34,7 @@ export function captureSlide(
   delete visual.dataset.stackflowSlideStaged;
   delete visual.dataset.stackflowSlideIncoming;
   visual.dataset.stackflowSlideSnapshot = '';
+  if (windowScroll) sizeWindowScrollSnapshot(visual, bounds);
   visual.removeAttribute('id');
   for (const element of visual.querySelectorAll('[id]')) element.removeAttribute('id');
 
@@ -81,9 +87,8 @@ export function captureSlide(
     if (disposed) return;
     onDispose = finished;
     if (!content.isConnected) { dispose(); return; }
-    const after = content.getBoundingClientRect();
+    const after = getBounds();
     const stableBounds = (['top', 'right', 'bottom', 'left'] as const).every(edge => Math.abs(bounds[edge] - after[edge]) <= .5);
-    const doc = content.ownerDocument;
     if (forceFallback || !stableBounds || !doc.startViewTransition) { playFallback(); return; }
 
     hold();
@@ -107,7 +112,7 @@ export function captureSlide(
       if (disposed || !stopNative) return;
       visual.remove();
       delete content.dataset.stackflowSlideStaged;
-      if (pins && !pins.captureDestination(findFixedTargets(content, selectors))) transition?.skipTransition();
+      if (pins && !pins.captureDestination(findFixedTargets(content, selectors, getBounds()))) transition?.skipTransition();
     };
     const fallback = () => {
       if (disposed || !stopNative) return;
