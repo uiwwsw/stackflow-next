@@ -8,13 +8,13 @@ test('only the visible target scrolls and a second visible match restores the de
   const track = win.document.createElement('div');
   track.innerHTML = `
     <div class="stackflow-next-content">
-      <main data-app-scroll></main><main data-app-scroll hidden></main>
+      <main data-app-scroll></main><main data-app-scroll style="visibility:hidden"></main>
     </div>`;
   win.document.body.append(track);
   const [body] = Array.from(track.children);
   const [target, retained] = Array.from(body.children);
   Object.defineProperty(target, 'getClientRects', { value: () => ({ length: 1 }) });
-  Object.defineProperty(retained, 'getClientRects', { value: () => ({ length: retained.hasAttribute('hidden') ? 0 : 1 }) });
+  Object.defineProperty(retained, 'getClientRects', { value: () => ({ length: 1 }) });
   const warning = t.mock.method(console, 'warn', () => {});
 
   const captured: HTMLElement[] = [];
@@ -28,7 +28,7 @@ test('only the visible target scrolls and a second visible match restores the de
     target.dispatchEvent(new win.Event('scroll'));
     assert.deepEqual(captured, [target]);
 
-    retained.removeAttribute('hidden');
+    retained.removeAttribute('style');
     assert.equal(controller.getElement(true), body);
     assert.equal(target.hasAttribute('data-stackflow-scroll-target'), false);
     target.dispatchEvent(new win.Event('scroll'));
@@ -117,6 +117,15 @@ test('the window scrollbar uses the target content box up to both native scroll 
     const zoomedHeight = parseFloat(thumb.style.height);
     assert.ok(Math.abs((thumbTop() + zoomedHeight) * zoom - end) < 0.001);
     assert.ok(Math.abs((cssEnd + zoomedHeight) * zoom - end) < 0.001);
+
+    const shell = content.parentElement!;
+    Object.defineProperties(shell, { clientWidth: { value: 376 }, clientLeft: { value: 0 }, clientTop: { value: 0 } });
+    Object.defineProperty(thumb, 'offsetParent', { value: shell });
+    t.mock.method(shell, 'getBoundingClientRect', () => new win.DOMRect(12, 21 - offset, 376, 1900));
+    updateOffset(600);
+    assert.equal(thumb.hasAttribute('data-stackflow-scrollbar-root'), false);
+    assert.ok(Math.abs(thumbTop() * zoom + 21 - offset - (start + (railHeight - size) / 2)) < 0.001);
+    assert.ok(Math.abs(388 - parseFloat(thumb.style.right) * zoom - (370 - 3 * zoom)) < 0.001);
   } finally {
     controller.dispose();
   }

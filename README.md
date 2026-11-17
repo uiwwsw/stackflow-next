@@ -276,6 +276,24 @@ color.
 If the app positions its own bars with CSS `position: fixed`, reserve their
 heights in the layout so the first and last content remain reachable.
 
+### Add touch bounce at scroll boundaries
+
+Set `edgeBounce` to let the content follow an outward touch pull at either
+end and settle back when released. Apple devices continue to use their
+native rubber-banding. On other supported touch devices, the visual effect
+uses the selected scroll surface and takes the place of the browser's
+vertical boundary action, such as pull-to-refresh, during that gesture.
+The scroll offset and native scroll range stay at the boundary.
+
+```tsx
+<StackflowProvider scrollTarget="[data-app-scroll]" edgeBounce>
+  <main data-app-scroll>{children}</main>
+</StackflowProvider>
+```
+
+The effect respects reduced motion. Keep fixed bars outside the moving
+surface, for example as siblings of `scrollTarget` or in the provider slots.
+
 ### Use an independent scroll container
 
 Set `scrollMode="container"` to keep scrolling inside a bounded provider.
