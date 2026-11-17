@@ -240,9 +240,11 @@ hash, or another query key also changes, the usual transition rules apply.
 The document scrolls by default. Existing calls to `window.scrollTo()` and
 `window.scrollBy()`, reads of `window.scrollY`, and window `scroll` listeners
 work with Stackflow. Stackflow hides the browser's document scrollbar and
-draws a vertical thumb inside the visible area specified by `scrollTarget`.
-It uses the document's actual scroll range and the target's visible height.
-With no single visible match, it uses the provider body for the display area.
+draws a vertical thumb aligned to the right edge of `scrollTarget`. The track
+runs between the sticky slots. It stays the same height while the selected
+content scrolls past it. Thumb size and travel use the document's actual
+scroll range, so the thumb reaches the track's bottom at the end of the page.
+With no single visible match, Stackflow uses the provider body's right edge.
 
 ```tsx
 <StackflowProvider scrollTarget="[data-app-scroll]"

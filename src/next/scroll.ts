@@ -19,6 +19,23 @@ export function previewScrollElement(content: HTMLElement) {
   return content.querySelector<HTMLElement>(`[${targetAttribute}]`) ?? content;
 }
 
+function paintThumb(thumb: HTMLElement, track: {top: number; right: number; height: number},
+  visibleHeight: number, scrollRange: number, offset: number, elastic = false) {
+  thumb.hidden = track.height <= 0 || visibleHeight <= 0 || scrollRange <= 0;
+  if (thumb.hidden) return;
+
+  const clamped = Math.min(scrollRange, Math.max(0, offset));
+  // The document dimensions are rounded, while Safari and zoomed layouts can
+  // report fractional offsets even at a real scroll boundary.
+  const edge = Math.min(1, scrollRange / 4);
+  const progress = clamped <= edge ? 0 : clamped >= scrollRange - edge ? 1 : clamped / scrollRange;
+  const normalHeight = Math.min(track.height, Math.max(12, track.height * visibleHeight / (visibleHeight + scrollRange)));
+  const height = elastic ? Math.max(Math.min(8, normalHeight), normalHeight - Math.abs(offset - clamped) / 2) : normalHeight;
+  thumb.style.height = `${height}px`;
+  thumb.style.right = `${track.right + 3}px`;
+  thumb.style.transform = `translateY(${track.top + progress * (track.height - height)}px)`;
+}
+
 function paintScrollbar(thumb: HTMLElement, element: HTMLElement) {
   const viewport = thumb.parentElement;
   if (!viewport) return;
@@ -29,34 +46,36 @@ function paintScrollbar(thumb: HTMLElement, element: HTMLElement) {
   const bottom = Math.min(bounds.bottom, rect.top + clientTop + clientHeight);
   const left = Math.max(bounds.left, rect.left + clientLeft);
   const right = Math.min(bounds.right, rect.left + clientLeft + clientWidth);
-  const trackHeight = bottom - top;
-  const scrollRange = scrollHeight - clientHeight;
-  thumb.hidden = clientHeight <= 0 || trackHeight <= 0 || right <= left || scrollRange <= 0;
-  if (thumb.hidden) return;
-
-  const height = Math.min(trackHeight, Math.max(24, trackHeight * clientHeight / scrollHeight));
-  const progress = Math.min(1, Math.max(0, scrollTop / scrollRange));
-  thumb.style.height = `${height}px`;
-  thumb.style.right = `${bounds.right - right + 3}px`;
-  thumb.style.transform = `translateY(${top - bounds.top + progress * (trackHeight - height)}px)`;
+  paintThumb(thumb, { top: top - bounds.top, right: bounds.right - right, height: right > left ? bottom - top : 0 },
+    clientHeight, scrollHeight - clientHeight, scrollTop);
 }
 
-export function windowScrollBounds(content: HTMLElement, target = content) {
+function windowViewportBounds(content: HTMLElement) {
   const doc = content.ownerDocument;
   const win = doc.defaultView!;
   const viewport = win.visualViewport;
-  const viewportTop = viewport?.offsetTop ?? 0;
-  const viewportLeft = viewport?.offsetLeft ?? 0;
-  const viewportBottom = viewportTop + (viewport?.height ?? doc.documentElement.clientHeight);
-  const viewportRight = viewportLeft + (viewport?.width ?? doc.documentElement.clientWidth);
+  const top = viewport?.offsetTop ?? 0;
+  const left = viewport?.offsetLeft ?? 0;
+  const bottom = top + (viewport?.height ?? doc.documentElement.clientHeight);
+  const right = left + (viewport?.width ?? doc.documentElement.clientWidth);
   const provider = content.parentElement?.parentElement;
   const header = provider?.querySelector(':scope > .stackflow-next-header');
   const footer = provider?.querySelector(':scope > .stackflow-next-bottom');
-  const rect = target.getBoundingClientRect();
-  const left = Math.max(viewportLeft, rect.left);
-  const top = Math.max(viewportTop, rect.top, header?.getBoundingClientRect().bottom ?? viewportTop);
-  const right = Math.min(viewportRight, rect.right);
-  const bottom = Math.min(viewportBottom, rect.bottom, footer?.getBoundingClientRect().top ?? viewportBottom);
+  return {
+    left, right,
+    top: Math.max(top, header?.getBoundingClientRect().bottom ?? top),
+    bottom: Math.min(bottom, footer?.getBoundingClientRect().top ?? bottom),
+  };
+}
+
+export function windowScrollBounds(content: HTMLElement) {
+  const viewport = windowViewportBounds(content);
+  const rect = content.getBoundingClientRect();
+  const left = Math.max(viewport.left, rect.left);
+  const top = Math.max(viewport.top, rect.top);
+  const right = Math.min(viewport.right, rect.right);
+  const bottom = Math.min(viewport.bottom, rect.bottom);
+  const win = content.ownerDocument.defaultView!;
   return new win.DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
 }
 
@@ -90,19 +109,15 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
       }
     }
     const root = getElement();
-    const bounds = windowScrollBounds(content, target);
-    const range = root.scrollHeight - root.clientHeight;
-    thumb.hidden = range <= 0 || bounds.height <= 0 || bounds.width <= 0;
-    if (thumb.hidden) return;
-
-    const offset = win.scrollY;
-    const clamped = Math.min(range, Math.max(0, offset));
-    const normalHeight = Math.min(bounds.height, Math.max(24, bounds.height ** 2 / (bounds.height + range)));
-    const height = Math.max(Math.min(8, normalHeight), normalHeight - Math.abs(offset - clamped) / 2);
-    const top = bounds.top + clamped / range * (bounds.height - height);
-    thumb.style.height = `${height}px`;
-    thumb.style.right = `${doc.documentElement.clientWidth - bounds.right + 3}px`;
-    thumb.style.transform = `translateY(${top}px)`;
+    const viewportBounds = windowViewportBounds(content);
+    const rect = target.getBoundingClientRect();
+    const left = Math.max(viewportBounds.left, rect.left);
+    const right = Math.min(viewportBounds.right, rect.right);
+    // The target scrolls with the document. Its horizontal bounds position
+    // the rail, and the viewport and sticky slots determine its height.
+    const height = right > left ? viewportBounds.bottom - viewportBounds.top : 0;
+    paintThumb(thumb, { top: viewportBounds.top, right: doc.documentElement.clientWidth - right, height },
+      height, root.scrollHeight - root.clientHeight, win.scrollY, true);
   }
 
   function schedule() { if (!frame) frame = win.requestAnimationFrame(paint); }

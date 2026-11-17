@@ -42,7 +42,7 @@ test('only the visible target scrolls and a second visible match restores the de
   assert.equal(target.hasAttribute('data-stackflow-scroll-target'), false);
 });
 
-test('the window scrollbar follows document offsets and compresses at both elastic edges', t => {
+test('the window scrollbar keeps a stable track as the target moves and reaches both edges', t => {
   const win = new Window();
   const root = win.document.documentElement;
   Object.defineProperties(root, {
@@ -61,30 +61,43 @@ test('the window scrollbar follows document offsets and compresses at both elast
   const thumb = content.nextElementSibling as HTMLElement;
   const main = content.querySelector('main')!;
   t.mock.method(main, 'getClientRects', () => ({ length: 1 }));
-  t.mock.method(main, 'getBoundingClientRect', () => new win.DOMRect(20, 90, 360, 1500));
+  // The target begins below the header and ends before the document footer.
+  t.mock.method(main, 'getBoundingClientRect', () => new win.DOMRect(20, 90 - offset, 360, 1540));
   t.mock.method(win.document.querySelector('header')!, 'getBoundingClientRect', () => new win.DOMRect(0, 0, 400, 50));
   t.mock.method(win.document.querySelector('footer')!, 'getBoundingClientRect', () => new win.DOMRect(0, 630, 400, 70));
 
   const scrolled: HTMLElement[] = [];
   const controller = attachWindowScroll(content, 'main', element => scrolled.push(element), thumb);
   try {
+    const thumbTop = () => parseFloat(thumb.style.transform.slice('translateY('.length));
+    const updateOffset = (next: number) => {
+      offset = next;
+      win.dispatchEvent(new win.Event('scroll'));
+      paint!(0);
+    };
     paint!(0);
     const size = parseFloat(thumb.style.height);
     assert.equal(controller.getElement(), root);
     assert.equal(thumb.hidden, false);
     assert.equal(thumb.style.right, '23px');
-    assert.equal(thumb.style.transform, 'translateY(90px)');
+    assert.equal(thumbTop(), 50);
+    assert.ok(Math.abs(size - 580 ** 2 / 1780) < 0.001);
+
+    updateOffset(600);
+    assert.equal(parseFloat(thumb.style.height), size);
+    assert.ok(Math.abs(thumbTop() - (50 + (580 - size) / 2)) < 0.001);
+
+    updateOffset(1199.5);
+    assert.equal(parseFloat(thumb.style.height), size);
+    assert.ok(Math.abs(thumbTop() + size - 630) < 0.001);
 
     for (const edge of [-60, 1260]) {
-      offset = edge;
-      win.dispatchEvent(new win.Event('scroll'));
-      paint!(0);
+      updateOffset(edge);
       const height = parseFloat(thumb.style.height);
       assert.ok(height < size);
-      const top = parseFloat(thumb.style.transform.slice('translateY('.length));
-      assert.ok(Math.abs(top - (edge < 0 ? 90 : 630 - height)) < 0.001);
+      assert.ok(Math.abs(thumbTop() - (edge < 0 ? 50 : 630 - height)) < 0.001);
     }
-    assert.deepEqual(scrolled, [root, root]);
+    assert.deepEqual(scrolled, [root, root, root, root]);
   } finally {
     controller.dispose();
   }
