@@ -1,8 +1,0 @@
-:80 {
-	encode zstd gzip
-	redir /detail /demo/detail 308
-	redir /slow /demo/slow 308
-	redir /skeleton /demo/skeleton 308
-	redir /stackflow-next-0.2.0-alpha.2.tgz https://registry.npmjs.org/@uiwwsw/stackflow-next/-/stackflow-next-0.2.0-alpha.2.tgz 308
-	reverse_proxy 127.0.0.1:3000
-}
