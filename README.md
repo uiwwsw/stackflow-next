@@ -9,8 +9,8 @@
   <a href="https://github.com/uiwwsw/stackflow-next/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/npm/l/@uiwwsw/stackflow-next?style=flat-square"></a>
   <a href="https://github.com/uiwwsw/stackflow-next/actions/workflows/public-docs.yml"><img alt="commit hygiene workflow" src="https://img.shields.io/github/actions/workflow/status/uiwwsw/stackflow-next/public-docs.yml?branch=main&style=flat-square&label=hygiene"></a>
   <img alt="types: TypeScript" src="https://img.shields.io/npm/types/@uiwwsw/stackflow-next?style=flat-square">
-  <img alt="next >= 16.4.6" src="https://img.shields.io/badge/next-%E2%89%A5%2016.4.6-black?style=flat-square">
-  <img alt="react >= 19.3.1" src="https://img.shields.io/badge/react-%E2%89%A5%2019.3.1-087ea4?style=flat-square">
+  <img alt="next 16.4.6 or later" src="https://img.shields.io/badge/next-%E2%89%A5%2016.4.6-black?style=flat-square">
+  <img alt="react 19.3.1 or later" src="https://img.shields.io/badge/react-%E2%89%A5%2019.3.1-087ea4?style=flat-square">
 </p>
 
 <p>
