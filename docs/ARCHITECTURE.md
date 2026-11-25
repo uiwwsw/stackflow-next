@@ -152,7 +152,7 @@ The `./dom` entry has no dependencies.
   that are not tested.
 - State retention depends on Next.js Cache Components and can be evicted by
   Next; it does not survive a reload.
-- The page slide needs View Transitions for the best result. Browsers without
+- The page slide uses View Transitions. Browsers without
   them navigate normally.
 - Parallel and intercepting routes and real-device mobile gestures are not
   tested. Tests run in a simulated DOM and the demo, not on a device matrix.
