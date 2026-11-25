@@ -1,9 +1,32 @@
 # @uiwwsw/stackflow-next
 
-App-style navigation for Next.js App Router. The package adds directional
-page transitions, a scroll viewport and an interactive back gesture. Next.js
-Activity preserves screen state for retained routes. This is an independent
-Stackflow integration.
+Slide transitions, an edge-swipe Back gesture, per-entry scroll restoration
+and a custom scrollbar for the Next.js App Router. Navigation and state
+retention stay with Next.js; this package adds the visual layer on top.
+
+This is an unofficial package. It is not made by or affiliated with the
+[Stackflow](https://github.com/daangn/stackflow) team at Daangn. It depends on
+`@stackflow/core` only to compute the `Stack` returned by `useStack()`.
+
+## What it builds on
+
+- [Next.js](https://nextjs.org) App Router and Cache Components, which keep
+  React and DOM state for retained routes
+  ([guide](https://nextjs.org/docs/app/guides/preserving-ui-state)).
+- [`@stackflow/core`](https://github.com/daangn/stackflow) by Daangn for the
+  stack computation.
+- The browser's
+  [View Transitions API](https://developer.mozilla.org/docs/Web/API/View_Transition_API)
+  for the page slide and the
+  [Navigation API](https://developer.mozilla.org/docs/Web/API/Navigation_API)
+  where available.
+- The slide and swipe imitate iOS navigation controllers. No animation library
+  is used.
+
+The history tracking, snapshot capture, fixed-target handling, scroll viewport
+and swipe preview are written in this repository. See
+[Architecture and credits](https://github.com/uiwwsw/stackflow-next/blob/main/docs/ARCHITECTURE.md)
+for a file-by-file description, the dependency list and the limits.
 
 ## Install and configure
 
@@ -30,8 +53,7 @@ export default withStackflow({});
 
 The helper enables Next.js `cacheComponents` and `partialPrefetching`. This is
 what preserves actual React component state and DOM across supported client
-navigations. Retention belongs to Next, not to a second router or a private
-router-context workaround. Existing applications must follow Next's Cache
+navigations. Retention is done by Next.js; this package adds no router of its own. Existing applications must follow Next's Cache
 Components migration requirements, including Suspense around request-time data.
 See [Next's state preservation guide](https://nextjs.org/docs/app/guides/preserving-ui-state).
 
@@ -79,12 +101,12 @@ export function Actions() {
 - Reloads and direct URL opens render immediately. In-app pushes and browser
   Back/Forward play the stack transition. Push and pop slide horizontally
   in opposite directions. If the viewport changes height before the browser
-  snapshot is ready, Stackflow can play the slide with the saved outgoing screen.
+  snapshot is ready, this package can play the slide with the saved outgoing screen.
   By default, replace switches directly. Use `replace(href, 'push')` or
   `replace(href, 'pop')` to slide in that direction while replacing the current
   history entry. With no direction, changes to only the query or hash switch
   directly even when the route has an animation override.
-- Stackflow draws a custom vertical scrollbar inside the active scroll area.
+- The provider draws a custom vertical scrollbar inside the active scroll area.
   The browser handles scrolling and touch gestures in that area.
 - Control selection, callout and tap-highlight styling is scoped to controls;
   editable fields and `data-selectable` retain selection.
@@ -239,7 +261,7 @@ hash, or another query key also changes, the usual transition rules apply.
 
 The document scrolls by default. Existing calls to `window.scrollTo()` and
 `window.scrollBy()`, reads of `window.scrollY`, and window `scroll` listeners
-work with Stackflow. Stackflow hides the browser's document scrollbar and
+work with the provider. It hides the browser's document scrollbar and
 draws a vertical thumb inside the visible area specified by `scrollTarget`.
 It uses the document's actual scroll range and the target's visible height.
 With no single visible match, it uses the provider body for the display area.
@@ -334,10 +356,10 @@ For state that must outlive route eviction, keep it in an application store or u
 `useStackState(key, initial)` for an explicitly saved per-entry value. This hook's
 cache is memory-only and bounded by `maxEntries` (default 32).
 
-`useStack()` exposes Stackflow core's computed Stack; select `isTop` rather than
-assuming array order. Core computes navigation state; it does not render RSCs.
+`useStack()` returns the Stack computed by `@stackflow/core`; select `isTop` rather than
+assuming array order. Core only computes the stack state; it does not render server components.
 
-Stackflow starts Next.js navigation as soon as it captures the outgoing DOM.
+The provider starts Next.js navigation as soon as it captures the outgoing DOM.
 By default the slide starts when the destination first renders, including a
 skeleton from `loading.tsx`. Next.js streams the completed content into that
 screen. Prefetching can make the skeleton or page available earlier.
@@ -380,11 +402,11 @@ The `loading` prop supplies default content for `StackLoading` and can be set
 to `null` for a marker with no visible content. `navigationTimeout` (4000 ms by
 default) bounds the wait. At that point a committed skeleton can slide into
 view, or a route that still has no commit can render when it becomes available.
-When a client-side redirect commits a different route, Stackflow records the
+When a client-side redirect commits a different route, the provider records the
 actual destination and releases the snapshot. Competing history or View
 Transition libraries require application-specific testing.
 
-For same-document Back and Forward, Stackflow copies the outgoing DOM on the
+For same-document Back and Forward, the provider copies the outgoing DOM on the
 Navigation API’s `navigate` event when available. Older browsers use the
 capture-phase `popstate` listener. Next receives the original history event.
 Browsers without View Transitions use ordinary navigation. Initial page loads,
@@ -392,8 +414,8 @@ reloads, and links activated before hydration follow browser navigation. Only sa
 HTTP(S) destinations are supported by the router helper. Ordinary Next Links
 still work but forward snapshot motion requires StackLink or useStackRouter.
 
-The current version targets Next.js 16.4.6+, React 19.3.1+ and Stackflow core 3.1.0.
-Parallel/intercepting routes and real-device mobile gestures are not yet certified.
+The current version targets Next.js 16.4.6+, React 19.3.1+ and `@stackflow/core` 3.1.0.
+Parallel and intercepting routes and real-device mobile gestures are untested.
 
 ## Other options
 

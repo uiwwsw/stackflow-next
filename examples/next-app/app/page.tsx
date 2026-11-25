@@ -49,8 +49,8 @@ export default function Home() {
     <main>
       <section className="hero" aria-labelledby="hero-title">
         <div className="hero-copy">
-          <h1 id="hero-title">Next.js 웹이 앱처럼 넘어갑니다</h1>
-          <p>App Router의 주소와 브라우저 방문 기록은 그대로 두고, 화면 전환과 스와이프 뒤로가기, 화면별 스크롤 복원을 더합니다.</p>
+          <h1 id="hero-title">Next.js 화면 전환 라이브러리</h1>
+          <p>App Router의 주소와 브라우저 방문 기록은 그대로 두고, 슬라이드 화면 전환과 스와이프 뒤로가기, 화면별 스크롤 복원을 더합니다. 상태 유지는 Next.js가, 스택 계산은 @stackflow/core가 맡습니다. Stackflow 팀과 무관한 비공식 패키지입니다.</p>
           <p>여기 있는 두 화면은 같은 숙소 앱입니다. 숙소를 하나 열고, 예약하기를 누른 뒤 뒤로 돌아와 보세요.</p>
           <CopyInstall command="npm install @uiwwsw/stackflow-next" />
         </div>
@@ -73,11 +73,11 @@ export default function Home() {
             </tbody>
           </table>
         </div>
-        <p className="differences-note">두 버전은 같은 Next.js 앱, 같은 설정으로 빌드했습니다. 다른 점은 레이아웃에서 StackflowProvider와 StackLink를 쓰는지 여부뿐입니다. 모션 줄이기 설정이 켜져 있으면 전환 없이 바로 바뀝니다.</p>
+        <p className="differences-note">두 버전은 같은 Next.js 앱, 같은 설정으로 빌드했습니다. 두 버전의 차이는 레이아웃에서 StackflowProvider와 StackLink를 쓰는지 여부뿐입니다. 모션 줄이기 설정이 켜져 있으면 전환 없이 바로 바뀝니다.</p>
       </section>
 
       <section className="install" id="install" aria-labelledby="install-title">
-        <h2 id="install-title">세 단계면 붙습니다</h2>
+        <h2 id="install-title">설치 방법</h2>
         <ol>
           <li>
             <h3>패키지를 설치합니다</h3>
