@@ -1,45 +1,130 @@
-# @uiwwsw/stackflow-next
+<div align="center">
 
-Slide transitions, an edge-swipe Back gesture, per-entry scroll restoration
-and a custom scrollbar for the Next.js App Router. Navigation and state
-retention stay with Next.js; this package adds the visual layer on top.
+<h1>@uiwwsw/stackflow-next</h1>
+
+<p>Slide transitions, an edge-swipe Back gesture, per-entry scroll restoration and a custom scrollbar for the Next.js App Router.</p>
+
+<p>
+  <a href="https://www.npmjs.com/package/@uiwwsw/stackflow-next"><img alt="npm version" src="https://img.shields.io/npm/v/@uiwwsw/stackflow-next?style=flat-square"></a>
+  <a href="https://github.com/uiwwsw/stackflow-next/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/npm/l/@uiwwsw/stackflow-next?style=flat-square"></a>
+  <a href="https://github.com/uiwwsw/stackflow-next/actions/workflows/public-docs.yml"><img alt="commit hygiene workflow" src="https://img.shields.io/github/actions/workflow/status/uiwwsw/stackflow-next/public-docs.yml?branch=main&style=flat-square&label=hygiene"></a>
+  <img alt="types: TypeScript" src="https://img.shields.io/npm/types/@uiwwsw/stackflow-next?style=flat-square">
+  <img alt="next >= 16.4.6" src="https://img.shields.io/badge/next-%E2%89%A5%2016.4.6-black?style=flat-square">
+  <img alt="react >= 19.3.1" src="https://img.shields.io/badge/react-%E2%89%A5%2019.3.1-087ea4?style=flat-square">
+</p>
+
+<p>
+  <a href="https://stackflow-next.vercel.app">Demo</a> ·
+  <a href="https://github.com/uiwwsw/stackflow-next/blob/main/docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="https://www.npmjs.com/package/@uiwwsw/stackflow-next">npm</a> ·
+  <a href="https://github.com/uiwwsw/stackflow-next">GitHub</a>
+</p>
+
+</div>
 
 This is an unofficial package. It is not made by or affiliated with the
 [Stackflow](https://github.com/daangn/stackflow) team at Daangn. It depends on
 `@stackflow/core` only to compute the `Stack` returned by `useStack()`.
+Navigation and state retention stay with Next.js; this package adds the visual
+layer on top.
 
-## What it builds on
+## Features
 
-- [Next.js](https://nextjs.org) App Router and Cache Components, which keep
-  React and DOM state for retained routes
-  ([guide](https://nextjs.org/docs/app/guides/preserving-ui-state)).
-- [`@stackflow/core`](https://github.com/daangn/stackflow) by Daangn for the
-  stack computation.
-- The browser's
-  [View Transitions API](https://developer.mozilla.org/docs/Web/API/View_Transition_API)
-  for the page slide and the
-  [Navigation API](https://developer.mozilla.org/docs/Web/API/Navigation_API)
-  where available.
-- The slide and swipe imitate iOS navigation controllers. No animation library
-  is used.
+- Slide transition between routes, drawn with the View Transitions API.
+- Vertical slide for routes listed in `modalRoutes`.
+- Edge-swipe Back gesture (`swipeBack`) with a preview of the previous screen.
+- Scroll offset restored per history entry (`preserveScroll`).
+- Custom vertical scrollbar in the document or in a scroll container.
+- `fixedTargets` keeps selected elements still while the page slides.
+- `waitForPage` and `skeletonRoutes` control when the slide starts.
+- `StackMotion` and `data-sfn-enter` / `data-sfn-exit` apply the same slides to local show/hide state.
+- `StackLink` and `useStackRouter` wrap `next/link` and the Next router.
+- `useStack`, `useStackScroll` and `useStackState` hooks.
+- `persistent`, `header` and `footer` slots outside the transition.
+- Built-in loading text in ten languages.
+- `prefers-reduced-motion` is honored.
+- `./dom` entry with `createApelike`, a standalone DOM renderer that does not use React.
+
+## Install
+
+```sh
+npm install @uiwwsw/stackflow-next
+```
+
+Requires Next.js 16.4.6 or later and React 19.3.1 or later (see
+[Not included and limits](#not-included-and-limits)).
+
+## Usage
+
+Wrap the Next.js config:
+
+```js
+// next.config.mjs
+import { withStackflow } from '@uiwwsw/stackflow-next/config';
+export default withStackflow({});
+```
+
+Add the provider to the root layout:
+
+```tsx
+// app/layout.tsx — remains a Server Component
+import { StackflowProvider } from '@uiwwsw/stackflow-next';
+import '@uiwwsw/stackflow-next/style.css';
+
+export default function Layout({ children }) {
+  return <html lang="en"><body style={{ margin: 0 }}>
+    <StackflowProvider swipeBack preserveScroll>
+      {children}
+    </StackflowProvider>
+  </body></html>;
+}
+```
+
+Link and navigate from Client Components:
+
+```tsx
+'use client';
+import { StackLink, useStackRouter } from '@uiwwsw/stackflow-next';
+
+export function Actions() {
+  const router = useStackRouter();
+  return <>
+    <StackLink href="/detail">Details</StackLink>
+    <button onClick={() => router.back()}>Back</button>
+  </>;
+}
+```
+
+The [demo site](https://stackflow-next.vercel.app) runs the same app twice:
+[with Stackflow Next](https://stackflow-next.vercel.app/with) and
+[with plain Next.js links](https://stackflow-next.vercel.app/without).
+
+## Not included and limits
+
+- No router. Navigation, URLs, SSR and streaming stay with Next.js.
+- No state retention of its own. Normal `useState` and DOM state survive only while Next.js retains the route; Next can evict it, and it does not survive a reload.
+- No animation library. Motion is CSS and the Web Animations API.
+- Browsers without View Transitions use ordinary navigation.
+- Parallel and intercepting routes and real-device mobile gestures are untested.
+- Tests run in a simulated DOM and the demo, not on a device matrix.
+- The swipe preview is a DOM clone; canvas, video and embedded content may differ.
+- Versions below Next.js 16.4.6 and React 19.3.1 are not tested.
+- Not benchmarked against other libraries.
+
+## Built on
+
+- [Next.js](https://nextjs.org) App Router and Cache Components keep React and DOM state for retained routes ([guide](https://nextjs.org/docs/app/guides/preserving-ui-state)).
+- [`@stackflow/core`](https://github.com/daangn/stackflow) by Daangn computes the stack returned by `useStack()`.
+- [View Transitions API](https://developer.mozilla.org/docs/Web/API/View_Transition_API) draws the page slide.
+- [Navigation API](https://developer.mozilla.org/docs/Web/API/Navigation_API) reports Back/Forward where available.
+- The slide and swipe imitate iOS navigation controllers. No Apple code is used.
 
 The history tracking, snapshot capture, fixed-target handling, scroll viewport
 and swipe preview are written in this repository. See
 [Architecture and credits](https://github.com/uiwwsw/stackflow-next/blob/main/docs/ARCHITECTURE.md)
 for a file-by-file description, the dependency list and the limits.
 
-## Install and configure
-
-Install from npm.
-
-```sh
-npm install @uiwwsw/stackflow-next
-```
-
-See [npm](https://www.npmjs.com/package/@uiwwsw/stackflow-next) and the
-[official site](https://stackflow-next.vercel.app), which runs the same demo
-app twice: [with Stackflow Next](https://stackflow-next.vercel.app/with) and
-[with plain Next.js links](https://stackflow-next.vercel.app/without).
+## Configuration
 
 Add the following to `next.config.mjs`. Pass your existing Next.js configuration
 to `withStackflow` if you already have one. The integration needs no
@@ -161,8 +246,7 @@ query and hash when present. Mix exception rules and plain selectors in an
 array to control each element independently.
 
 If you installed `0.2.0-alpha.7` and used `transitionTarget`, upgrade and remove
-that prop. Restore the bounded-height provider layout shown above under Install
-and configure. Leave `fixedTargets` out to slide the entire page, or use it to
+that prop. Restore the bounded-height provider layout shown above under Configuration. Leave `fixedTargets` out to slide the entire page, or use it to
 keep specific shared elements still. The old prop is ignored and logs a migration
 warning in development.
 
@@ -451,3 +535,7 @@ locales use English.
 
 Pass `loading={translatedContent}` to use your app's own translations for any
 locale. A `StackLoading` instance can also supply its own children.
+
+## License
+
+MIT
