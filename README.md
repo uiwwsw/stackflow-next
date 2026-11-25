@@ -1,9 +1,32 @@
 # @uiwwsw/stackflow-next
 
-App-style navigation for Next.js App Router. The package adds directional
-page transitions, a scroll viewport and an interactive back gesture. Next.js
-Activity preserves screen state for retained routes. This is an independent
-Stackflow integration.
+Slide transitions, an edge-swipe Back gesture, per-entry scroll restoration
+and a custom scrollbar for the Next.js App Router. Navigation and state
+retention stay with Next.js; this package adds the visual layer on top.
+
+This is an unofficial package. It is not made by or affiliated with the
+[Stackflow](https://github.com/daangn/stackflow) team at Daangn. It depends on
+`@stackflow/core` only to compute the `Stack` returned by `useStack()`.
+
+## What it builds on
+
+- [Next.js](https://nextjs.org) App Router and Cache Components, which keep
+  React and DOM state for retained routes
+  ([guide](https://nextjs.org/docs/app/guides/preserving-ui-state)).
+- [`@stackflow/core`](https://github.com/daangn/stackflow) by Daangn for the
+  stack computation.
+- The browser's
+  [View Transitions API](https://developer.mozilla.org/docs/Web/API/View_Transition_API)
+  for the page slide and the
+  [Navigation API](https://developer.mozilla.org/docs/Web/API/Navigation_API)
+  where available.
+- The slide and swipe imitate iOS navigation controllers. No animation library
+  is used.
+
+The history tracking, snapshot capture, fixed-target handling, scroll viewport
+and swipe preview are written in this repository. See
+[Architecture and credits](https://github.com/uiwwsw/stackflow-next/blob/main/docs/ARCHITECTURE.md)
+for a file-by-file description, the dependency list and the limits.
 
 ## Install and configure
 
