@@ -2,7 +2,7 @@
 
 <h1>@uiwwsw/stackflow-next</h1>
 
-<p>Slide transitions, an edge-swipe Back gesture, per-entry scroll restoration and a custom scrollbar for the Next.js App Router.</p>
+<p>Stackflow-style stack navigation for the Next.js App Router, with server rendering left intact.</p>
 
 <p>
   <a href="https://www.npmjs.com/package/@uiwwsw/stackflow-next"><img alt="npm version" src="https://img.shields.io/npm/v/@uiwwsw/stackflow-next?style=flat-square"></a>
@@ -22,9 +22,19 @@
 
 </div>
 
-## What it is
+## Why this package
 
-An unofficial add-on for the Next.js App Router. It draws slide transitions between routes with the View Transitions API, adds an edge-swipe Back gesture, restores scroll position per history entry, and offers a custom scrollbar. Navigation, URLs and state retention stay with Next.js. It is not made by or affiliated with the [Stackflow](https://github.com/daangn/stackflow) team at Daangn; it uses `@stackflow/core` only to compute the stack returned by `useStack()`.
+Built on Stackflow's core, it brings app-style stack navigation to the Next.js App Router: slides that know forward from Back, an edge-swipe Back gesture, scroll restored per screen and a scrollbar that respects your fixed bars. Each screen stays an ordinary Next.js route.
+
+- **Server Components, SSR and prefetching stay intact.** Stackflow itself renders every screen inside one client `<Stack />`, and its README marks the Next.js example "Not Recommended". Here every screen remains its own route: `StackflowProvider` renders server-rendered children as passed, the only `useSearchParams` call sits in its own `<Suspense>`, and `StackLink` renders `next/link`, so prefetching and RSC payloads are untouched.
+- **Back and Forward animate in the right direction, automatically.** The Next.js guide states that browser Back/Forward, history swipes and `router.back()` do not trigger view transition animations, and its directional slides need `transitionTypes` on each link. This package reads direction from the history position, so browser Back plays the reverse slide with no per-link setup.
+- **Swipe Back with the previous screen visible.** An edge swipe drags the page and shows the screen underneath before committing.
+- **Scroll position per history entry,** restored on Back and Forward.
+- **The scroller is never replaced.** The document keeps scrolling, so `window.scrollTo`, `scrollY` and scroll listeners behave as before. Only the scrollbar changes: an [OverlayScrollbars](https://github.com/KingSora/OverlayScrollbars) bar you can drag or click, kept between fixed headers, footers and tab bars, with a horizontal bar only when the page overflows sideways.
+- **Light at runtime.** All exports bundled, minified and gzipped come to about 31.5 KB (OverlayScrollbars 15.3 KB, `@stackflow/core` 6.0 KB, this package about 10 KB); the same measurement of `@ssgoi/react` with its view-transitions entry is 44.0 KB. The scrollbar handle follows a `ScrollTimeline` where the browser supports it, the track is re-measured only when layout-relevant DOM changes (`class`, `style`, `hidden`), and UI state attributes such as `aria-*` cause no layout reads.
+- **Your Next.js config wins.** `withStackflow` turns on Cache Components only if you have not set it. With it on, screens keep their state on Back; with it off, transitions, swipe Back and scroll restoration still work.
+
+Not made by or affiliated with the [Stackflow](https://github.com/daangn/stackflow) team at Daangn.
 
 ## What works now
 
@@ -55,36 +65,6 @@ An unofficial add-on for the Next.js App Router. It draws slide transitions betw
 - No benchmarks against other libraries.
 - No physics or spring animation. Motion is CSS and the Web Animations API.
 - The drawn scrollbar no longer shrinks during elastic overscroll; `edgeBounce` still compresses it.
-
-## Where it stands
-
-One maintainer, no known production users, not tested on real devices. Compared with the libraries people use for the same job on the Next.js App Router (checked against each project's docs or source, November 2026):
-
-| | stackflow-next | [SSGOI](https://github.com/meursyphus/ssgoi) | [next-view-transitions](https://github.com/shuding/next-view-transitions) | [Stackflow](https://github.com/daangn/stackflow) |
-| --- | --- | --- | --- | --- |
-| Keeps App Router routes and server components | yes | yes | yes | no; its README marks the Next.js example "Not Recommended" |
-| Back/Forward plays the reverse direction | yes, from history position | yes, per saved entry | same animation both ways | yes, with its own router |
-| Swipe Back with a preview of the previous screen | yes | browser's own gesture only | no | yes (cupertino theme) |
-| Scroll position per history entry | yes | yes | no | not applicable |
-| Draggable scrollbar kept clear of fixed bars | yes | no | no | no |
-| Animation engine | View Transitions API | Web Animations API | View Transitions API | CSS transitions |
-| Framework range | Next.js 16.4.6+ | React, Vue, Svelte, Solid, Angular, Qwik; Next.js 13.4–16 | Next.js App Router | React, single page |
-
-- If you need effects beyond slides, older Next.js versions or browsers without View Transitions, SSGOI covers more and is more widely used.
-- If a crossfade on link clicks is enough, Next.js's own `<ViewTransition>` or next-view-transitions is smaller.
-- This package fits an app-like Next.js site that wants swipe Back, per-entry scroll and a scrollbar that respects its fixed header and tab bar together.
-- iOS Safari uses the same left edge for its own Back gesture; how the two interact has not been checked on a device.
-
-## Next.js compatibility
-
-Checked against the code and a production build (November 2026):
-
-- Server Components and SSR are untouched: `StackflowProvider` is a Client Component that renders its children as passed, and the only `useSearchParams` call sits in its own `<Suspense>`, so no route falls back to client rendering.
-- `StackLink` renders `next/link` and only intercepts `onNavigate`, so prefetching and RSC payloads work as with plain links.
-- `withStackflow` turns on Cache Components only when your config does not set it. Without it, transitions, swipe Back and scroll restoration still work; screen state resets on Back as in plain Next.js.
-- The document stays the scroller; `window.scrollTo`, `scrollY` and scroll events are unchanged.
-- Client JavaScript, all exports bundled, minified and gzipped: about 31.5 KB (OverlayScrollbars 15.3 KB, `@stackflow/core` 6.0 KB, this package about 10 KB). The same measurement for `@ssgoi/react` with its view-transitions entry gives 44.0 KB. CSS adds 5.2 KB gzipped.
-- Only layout-relevant DOM changes (`class`, `style`, `hidden`) make it re-measure the scrollbar track; UI state attributes such as `aria-*` or `data-state` do not.
 
 ## Install
 
