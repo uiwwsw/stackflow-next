@@ -31,7 +31,9 @@ An unofficial add-on for the Next.js App Router. It draws slide transitions betw
 - Slide transition between routes; vertical slide for routes in `modalRoutes`.
 - Edge-swipe Back (`swipeBack`) with a preview of the previous screen.
 - Scroll offset restored per history entry (`preserveScroll`).
-- Custom vertical scrollbar in the document or in a scroll container.
+- Document scrolling by default (`window.scrollTo`, `window.scrollY` keep working), with a custom vertical scrollbar; an independent scroll container also works (`scrollTarget`).
+- `edgeBounce`: optional touch bounce at scroll boundaries on non-Apple touch devices.
+- `skipSlideQueryKeys`: skip the page slide when only a popup query parameter changes.
 - `fixedTargets` keeps chosen elements still during the slide.
 - `waitForPage` and `skeletonRoutes` control when the slide starts.
 - `StackMotion` applies the same slides to local show/hide state.
@@ -61,7 +63,7 @@ An unofficial add-on for the Next.js App Router. It draws slide transitions betw
 
 - Usage is close to zero. No known production users.
 - It is a visual layer over Next.js. Stackflow is a full navigation stack with its own router and activity model; this package does not replace it.
-- The `main` branch `package.json` says 2.2.1. npm has 3.1.0, published 2026-11-17. The source on `main` does not match the published version.
+- Versions 3.0.0 to 3.1.0 were published to npm from a branch before they reached `main`; `main` now matches 3.1.0. Eight releases in one day (3.0.0 to 3.1.0 on 2026-11-17) mean the API is still moving.
 - Next.js documents its own View Transitions support ([guide](https://nextjs.org/docs/app/guides/view-transitions)). If a plain page transition is enough, use that and skip this package.
 - For animation work, Motion is the common choice (about 40 million weekly downloads).
 - For a native-style navigation stack with an official maintainer, use Stackflow.
