@@ -46,6 +46,8 @@ export interface StackflowProviderProps {
   scrollMode?: 'container' | 'window';
   /** Select a scroll container, or the scrollbar's display area in window mode. */
   scrollTarget?: string;
+  /** Add touch-only bounce where Apple-style native rubber-banding is unavailable. */
+  edgeBounce?: boolean;
   /** CSS selectors for shared elements inside the page that should not slide. */
   fixedTargets?: FixedTarget | readonly FixedTarget[];
   /** Pathnames presented as full-height modal pages. */
@@ -70,7 +72,7 @@ export interface StackflowProviderProps {
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollMode='window',scrollTarget,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollMode='window',scrollTarget,edgeBounce=false,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const scrollbar = useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
@@ -103,18 +105,19 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     const thumb = scrollbar.current;
     if (!content || !thumb) return;
     const capture = (element: HTMLElement) => engineRef.current?.capture(element);
+    const fixedSelectors = fixed.current.map(target => typeof target === 'string' ? target : target.selector);
     // Let the initial route hydrate before marking a descendant scroll target.
     const frame = window.requestAnimationFrame(() => {
       scroll.current = scrollMode === 'window'
-        ? attachWindowScroll(content, scrollTarget, capture, thumb)
-        : attachScrollViewport(content, scrollTarget, capture, element => engineRef.current?.restoreScroll(element), thumb);
+        ? attachWindowScroll(content, scrollTarget, capture, thumb, fixedSelectors, edgeBounce)
+        : attachScrollViewport(content, scrollTarget, capture, element => engineRef.current?.restoreScroll(element), thumb, fixedSelectors, edgeBounce);
     });
     return () => {
       window.cancelAnimationFrame(frame);
       scroll.current?.dispose();
       scroll.current = null;
     };
-  },[scrollTarget,scrollMode]);
+  },[scrollTarget,scrollMode,fixedTargets,edgeBounce]);
   useLayoutEffect(()=>{
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');
@@ -141,7 +144,9 @@ export function StackflowProvider({children,header,footer,persistent,animation='
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
         <div ref={viewport} className="stackflow-next-content">{children}</div>
-        <div ref={scrollbar} className="stackflow-next-scrollbar" aria-hidden="true" hidden />
+        <div ref={scrollbar} className="stackflow-next-scrollbar" aria-hidden="true" hidden>
+          <div className="stackflow-next-scrollbar-thumb" />
+        </div>
       </div>
       {scrollMode === 'window' ? <div className="stackflow-next-bottom">{bottom}</div> : bottom}
     </div>
