@@ -110,6 +110,15 @@ html:has(.stackflow-next[data-stackflow-scroll-mode=window]) > body::-webkit-scr
 }
 [data-stackflow-scroll-mode=window] > .stackflow-next-header{top:0}
 [data-stackflow-scroll-mode=window] > .stackflow-next-bottom{bottom:0}
+/* In window mode the body is as tall as the document, so its transition
+   snapshot reaches past the viewport. The live header and bottom bar sit
+   under the transition layer, so they get snapshots of their own above it. */
+html[data-stackflow-animating] [data-stackflow-scroll-mode=window] > .stackflow-next-header{view-transition-name:stackflow-next-header}
+html[data-stackflow-animating] [data-stackflow-scroll-mode=window] > .stackflow-next-bottom{view-transition-name:stackflow-next-bottom}
+::view-transition-group(stackflow-next-header),::view-transition-group(stackflow-next-bottom){animation:none;z-index:10}
+::view-transition-image-pair(stackflow-next-header),::view-transition-image-pair(stackflow-next-bottom){animation:none}
+::view-transition-old(stackflow-next-header),::view-transition-old(stackflow-next-bottom){display:none}
+::view-transition-new(stackflow-next-header),::view-transition-new(stackflow-next-bottom){animation:none;opacity:1}
 [data-stackflow-scroll-mode=window] .stackflow-next-scrollbar{position:fixed;z-index:4}
 [data-stackflow-bounce-scroll]{overscroll-behavior-y:none}
 /* Keep controls responsive while the browser paints the visual snapshot layer. */
