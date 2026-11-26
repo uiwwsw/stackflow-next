@@ -266,6 +266,21 @@ the scrollbar follows that element while it scrolls and switches to the
 document when document scrolling takes over. The scrollbar appears while the
 pointer moves or the page scrolls and hides 0.8 seconds later. Drag the handle
 or click the track to scroll; keyboard, wheel and touch scrolling stay native.
+When the page or the scroll area overflows sideways, a horizontal bar appears
+along the bottom of the track; otherwise it stays hidden.
+
+Set `scrollbar` to change when the drawn scrollbar hides. Scrolling itself is
+not affected.
+
+```tsx
+<StackflowProvider scrollbar={{ autoHide: 'scroll', autoHideDelay: 1200 }}>
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `autoHide` | `'move'` | `'move'`: shown while the pointer moves or the page scrolls. `'scroll'`: only while scrolling. `'leave'`: hidden when the pointer leaves the page. `'never'`: always shown. |
+| `autoHideDelay` | `800` | Milliseconds before hiding. |
+| `autoHideSuspend` | `true` | Stay hidden until the first scroll. |
 
 ```tsx
 <StackflowProvider scrollTarget="[data-app-scroll]">

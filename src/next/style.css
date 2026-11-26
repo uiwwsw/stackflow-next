@@ -14,8 +14,17 @@ html[data-stackflow-animating] .stackflow-next-content:not([data-stackflow-slide
 .stackflow-next-content[data-stackflow-scroll-delegated]{overflow:clip}
 /* The slot is the track box. OverlayScrollbars draws the handle inside it. */
 .stackflow-next-scrollbar{position:absolute;top:0;right:0;width:10px;z-index:3;pointer-events:none}
-.stackflow-next-scrollbar > .os-scrollbar-vertical{top:0;right:0;bottom:0;height:auto}
-.stackflow-next-scrollbar > .os-scrollbar-horizontal{display:none}
+.stackflow-next-scrollbar > .os-scrollbar.os-scrollbar-vertical{top:0;right:0;bottom:0;height:auto}
+.stackflow-next-scrollbar > .os-scrollbar.os-scrollbar-vertical:not(.os-scrollbar-cornerless){bottom:var(--os-size)}
+/* The horizontal bar shows only when that axis overflows. It runs along the
+   bottom of the track, from the track's right edge across its width. */
+.stackflow-next-scrollbar > .os-scrollbar.os-scrollbar-horizontal,
+.stackflow-next-scrollbar > .os-scrollbar.os-scrollbar-horizontal.os-scrollbar-cornerless{
+  top:auto;right:0;bottom:0;left:auto;width:var(--stackflow-track-width,100%)
+}
+.stackflow-next-scrollbar > .os-scrollbar.os-scrollbar-horizontal:not(.os-scrollbar-cornerless){
+  right:var(--os-size);width:calc(var(--stackflow-track-width,100%) - var(--os-size))
+}
 .os-theme-stackflow{
   box-sizing:border-box;
   --os-size:10px;--os-padding-perpendicular:3px;--os-padding-axis:0px;

@@ -17,40 +17,65 @@ export type OverlayScrollbar = { setActive(active: boolean): void; dispose(): vo
  */
 export type OverlayScrollbarFactory = (scroller: HTMLElement, root: boolean, slot: HTMLElement) => OverlayScrollbar | undefined;
 
-// Shown while the pointer moves or the page scrolls, so a mouse can grab it.
-// Nothing shows before the first scroll (OverlayScrollbars' accessible default).
-const overlayOptions = {
-  scrollbars: {
-    theme: 'os-theme-stackflow', autoHide: 'move', autoHideDelay: 800, autoHideSuspend: true,
-    dragScroll: true, clickScroll: true,
-  },
-} as const;
+/** When the drawn scrollbar hides itself. */
+export type ScrollbarOptions = {
+  /**
+   * 'move' (default): shown while the pointer moves or the page scrolls.
+   * 'scroll': shown only while scrolling. 'leave': hidden when the pointer
+   * leaves the page. 'never': always shown.
+   */
+  autoHide?: 'never' | 'scroll' | 'leave' | 'move';
+  /** Milliseconds before hiding. Defaults to 800. */
+  autoHideDelay?: number;
+  /** Keep it hidden until the first scroll. Defaults to true. */
+  autoHideSuspend?: boolean;
+};
+
+export function overlayScrollbarOptions(options: ScrollbarOptions = {}) {
+  const autoHideDelay = options.autoHideDelay;
+  return {
+    scrollbars: {
+      theme: 'os-theme-stackflow',
+      autoHide: options.autoHide ?? 'move',
+      autoHideDelay: typeof autoHideDelay === 'number' && Number.isFinite(autoHideDelay) && autoHideDelay >= 0 ? autoHideDelay : 800,
+      autoHideSuspend: options.autoHideSuspend ?? true,
+      dragScroll: true,
+      clickScroll: true,
+    },
+  } as const;
+}
 let clickScrollRegistered = false;
 
 /**
  * OverlayScrollbars keeps native scrolling (window.scrollTo, keyboard, touch
- * momentum) and draws a draggable, clickable scrollbar whose handle follows a
+ * momentum) and draws draggable, clickable scrollbars whose handles follow a
  * ScrollTimeline where supported. The scroller's DOM is not wrapped: the
  * document uses <html> as its viewport, and an element is its own viewport.
+ * The horizontal bar appears only when that axis actually overflows.
  */
-export const createOverlayScrollbar: OverlayScrollbarFactory = (scroller, root, slot) => {
-  try {
-    if (!clickScrollRegistered) {
-      OverlayScrollbars.plugin(ClickScrollPlugin);
-      clickScrollRegistered = true;
+export function createOverlayScrollbarFactory(options?: ScrollbarOptions): OverlayScrollbarFactory {
+  const overlayOptions = overlayScrollbarOptions(options);
+  return (scroller, root, slot) => {
+    try {
+      if (!clickScrollRegistered) {
+        OverlayScrollbars.plugin(ClickScrollPlugin);
+        clickScrollRegistered = true;
+      }
+      const instance = OverlayScrollbars(root
+        ? { target: scroller.ownerDocument.body, scrollbars: { slot }, cancel: { body: null } }
+        : { target: scroller, elements: { viewport: scroller }, scrollbars: { slot } }, overlayOptions);
+      if (!OverlayScrollbars.valid(instance)) return;
+      return {
+        setActive(active) { instance.options({ scrollbars: { visibility: active ? 'auto' : 'hidden' } }); },
+        dispose() { instance.destroy(); },
+      };
+    } catch {
+      return;
     }
-    const instance = OverlayScrollbars(root
-      ? { target: scroller.ownerDocument.body, scrollbars: { slot }, cancel: { body: null } }
-      : { target: scroller, elements: { viewport: scroller }, scrollbars: { slot } }, overlayOptions);
-    if (!OverlayScrollbars.valid(instance)) return;
-    return {
-      setActive(active) { instance.options({ scrollbars: { visibility: active ? 'auto' : 'hidden' } }); },
-      dispose() { instance.destroy(); },
-    };
-  } catch {
-    return;
-  }
-};
+  };
+}
+
+export const createOverlayScrollbar: OverlayScrollbarFactory = createOverlayScrollbarFactory();
 
 function overlays(slot: HTMLElement, factory: OverlayScrollbarFactory) {
   const created = new Map<HTMLElement, OverlayScrollbar | undefined>();
@@ -124,9 +149,11 @@ export function previewScrollElement(content: HTMLElement) {
  * Returns true when the slot's containing block moves with the document,
  * which means the track must be placed again after each document scroll.
  */
-function placeTrack(slot: HTMLElement, track: ScrollBounds, scrollRange: number, origin: ScrollbarOrigin) {
+function placeTrack(slot: HTMLElement, track: ScrollBounds, origin: ScrollbarOrigin) {
   const trackHeight = track.bottom - track.top;
-  slot.hidden = trackHeight <= 0 || track.right <= track.left || scrollRange <= 0;
+  // Each drawn bar hides itself when its axis does not overflow, so the slot
+  // only hides when the track has no area.
+  slot.hidden = trackHeight <= 0 || track.right <= track.left;
   if (slot.hidden) return false;
 
   const fixed = 'viewportRight' in origin;
@@ -143,6 +170,8 @@ function placeTrack(slot: HTMLElement, track: ScrollBounds, scrollRange: number,
   // the slot's effective zoom, including when inherited from an ancestor.
   const zoom = slot.currentCSSZoom || 1;
   slot.style.height = `${trackHeight / zoom}px`;
+  // The horizontal bar runs along the bottom of the track, leftward from its right edge.
+  slot.style.setProperty('--stackflow-track-width', `${(track.right - track.left) / zoom}px`);
   slot.style.right = `${(originRight - track.right) / zoom}px`;
   slot.style.transform = `translateY(${(track.top - originTop) / zoom}px)`;
   return !!parent;
@@ -198,7 +227,7 @@ function placeElementTrack(slot: HTMLElement, element: HTMLElement,
   if (target === element) fitTrack(track, contentBox(element, scrollport, false), 0, 0);
   else if (target) fitTrack(track, contentBox(target, target.getBoundingClientRect(), true), offset, range);
   excludeChrome?.(track);
-  return placeTrack(slot, track, range, origin);
+  return placeTrack(slot, track, origin);
 }
 
 function visualBounds(content: HTMLElement): ScrollBounds {
@@ -383,7 +412,7 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
       viewportBounds.right = Math.min(viewportBounds.right, region.right);
     }
     chrome.exclude(viewportBounds);
-    followsDocument = placeTrack(slot, viewportBounds, range, { viewportRight });
+    followsDocument = placeTrack(slot, viewportBounds, { viewportRight });
   }
 
   function schedule() { if (!frame) frame = win.requestAnimationFrame(paint); }
