@@ -75,6 +75,17 @@ One maintainer, no known production users, not tested on real devices. Compared 
 - This package fits an app-like Next.js site that wants swipe Back, per-entry scroll and a scrollbar that respects its fixed header and tab bar together.
 - iOS Safari uses the same left edge for its own Back gesture; how the two interact has not been checked on a device.
 
+## Next.js compatibility
+
+Checked against the code and a production build (November 2026):
+
+- Server Components and SSR are untouched: `StackflowProvider` is a Client Component that renders its children as passed, and the only `useSearchParams` call sits in its own `<Suspense>`, so no route falls back to client rendering.
+- `StackLink` renders `next/link` and only intercepts `onNavigate`, so prefetching and RSC payloads work as with plain links.
+- `withStackflow` turns on Cache Components only when your config does not set it. Without it, transitions, swipe Back and scroll restoration still work; screen state resets on Back as in plain Next.js.
+- The document stays the scroller; `window.scrollTo`, `scrollY` and scroll events are unchanged.
+- Client JavaScript, all exports bundled, minified and gzipped: about 31.5 KB (OverlayScrollbars 15.3 KB, `@stackflow/core` 6.0 KB, this package about 10 KB). The same measurement for `@ssgoi/react` with its view-transitions entry gives 44.0 KB. CSS adds 5.2 KB gzipped.
+- Only layout-relevant DOM changes (`class`, `style`, `hidden`) make it re-measure the scrollbar track; UI state attributes such as `aria-*` or `data-state` do not.
+
 ## Install
 
 ```sh

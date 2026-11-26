@@ -5,6 +5,9 @@ const targetAttribute = 'data-stackflow-scroll-target';
 const delegatedAttribute = 'data-stackflow-scroll-delegated';
 const nativeScrollbarAttribute = 'data-stackflow-native-scrollbar-hidden';
 const sourceAttribute = 'data-stackflow-scroll-source';
+// Only attributes that can move or resize the track are observed, so UI state
+// attributes (aria-*, data-state and the like) never cause layout reads.
+const layoutAttributes = ['class', 'style', 'hidden', 'data-stackflow-fixed-key'];
 
 type ScrollBounds = { top: number; right: number; bottom: number; left: number };
 type ScrollbarOrigin = { top: number; right: number } | { viewportRight: number };
@@ -149,6 +152,10 @@ export function previewScrollElement(content: HTMLElement) {
  * Returns true when the slot's containing block moves with the document,
  * which means the track must be placed again after each document scroll.
  */
+function setStyle(element: HTMLElement, property: string, value: string) {
+  if (element.style.getPropertyValue(property) !== value) element.style.setProperty(property, value);
+}
+
 function placeTrack(slot: HTMLElement, track: ScrollBounds, origin: ScrollbarOrigin) {
   const trackHeight = track.bottom - track.top;
   // Each drawn bar hides itself when its axis does not overflow, so the slot
@@ -169,11 +176,12 @@ function placeTrack(slot: HTMLElement, track: ScrollBounds, origin: ScrollbarOri
   // Track geometry is in viewport pixels. CSS lengths are scaled again by
   // the slot's effective zoom, including when inherited from an ancestor.
   const zoom = slot.currentCSSZoom || 1;
-  slot.style.height = `${trackHeight / zoom}px`;
+  // Write only what changed: an unchanged track costs no style invalidation.
+  setStyle(slot, 'height', `${trackHeight / zoom}px`);
   // The horizontal bar runs along the bottom of the track, leftward from its right edge.
-  slot.style.setProperty('--stackflow-track-width', `${(track.right - track.left) / zoom}px`);
-  slot.style.right = `${(originRight - track.right) / zoom}px`;
-  slot.style.transform = `translateY(${(track.top - originTop) / zoom}px)`;
+  setStyle(slot, '--stackflow-track-width', `${(track.right - track.left) / zoom}px`);
+  setStyle(slot, 'right', `${(originRight - track.right) / zoom}px`);
+  setStyle(slot, 'transform', `translateY(${(track.top - originTop) / zoom}px)`);
   return !!parent;
 }
 
@@ -445,7 +453,7 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
   resize.observe(content);
   resize.observe(doc.body);
   if (provider) for (const slot of provider.children) resize.observe(slot);
-  mutation.observe(provider ?? content, { subtree: true, childList: true, attributes: true });
+  mutation.observe(provider ?? content, { subtree: true, childList: true, attributes: true, attributeFilter: layoutAttributes });
   win.addEventListener('scroll', scrolled, { capture: true, passive: true });
   win.addEventListener('resize', invalidate);
   viewport?.addEventListener('resize', schedule);
@@ -570,7 +578,8 @@ export function attachScrollViewport(
   }
 
   resize.observe(content);
-  mutation.observe(content.closest('.stackflow-next') ?? content, { subtree: true, childList: true, characterData: true, attributes: true });
+  // Size changes of the scroller itself arrive through the ResizeObserver.
+  mutation.observe(content.closest('.stackflow-next') ?? content, { subtree: true, childList: true, attributes: true, attributeFilter: layoutAttributes });
   content.addEventListener('load', invalidate, true);
   win.addEventListener('resize', invalidate);
   getElement();
