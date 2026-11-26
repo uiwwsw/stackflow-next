@@ -32,8 +32,7 @@ An unofficial add-on for the Next.js App Router. It draws slide transitions betw
 - Edge-swipe Back (`swipeBack`) with a preview of the previous screen.
 - Scroll offset restored per history entry (`preserveScroll`).
 - Document scrolling by default (`window.scrollTo`, `window.scrollY` keep working); an independent scroll container also works (`scrollTarget`).
-- `appShell`: the provider fills the viewport, the document never scrolls, and only the content area (or each page's `scrollTarget`) scrolls. Header and footer slots are optional.
-- The browser's own scrollbar is hidden on `<html>`, `<body>` and the scroll areas; the drawn scrollbar replaces it.
+- Only the scrollbar changes, never the scroller: the document still scrolls, so `window.scrollTo`, `window.scrollY`, `scrollTop` and `scroll` events behave as without the package. The browser's own scrollbar is hidden on `<html>` and `<body>`, and the drawn scrollbar replaces it.
 - A vertical scrollbar drawn with [OverlayScrollbars](https://github.com/KingSora/OverlayScrollbars): its track stays between fixed headers, footers and tab bars, follows whichever scroller is moving, and can be dragged or clicked.
 - `edgeBounce`: optional touch bounce at scroll boundaries on non-Apple touch devices.
 - `skipSlideQueryKeys`: skip the page slide when only a popup query parameter changes.
