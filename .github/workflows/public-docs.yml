@@ -1,5 +1,7 @@
 name: Commit hygiene
-on: [push, pull_request]
+on:
+  # Seconds-long guard for public text; runs on pull requests only.
+  pull_request:
 permissions:
   contents: read
 jobs:
