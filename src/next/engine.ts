@@ -329,13 +329,13 @@ export class NavigationEngine {
   }
   capture(element = this.scrollElement()) {
     if (!this.current || !element) return;
-    const offset = element.scrollTop;
-    this.current.scroll = this.isWindowScroll(element)
-      ? Math.max(0, Math.min(element.scrollHeight - element.clientHeight, offset)) : offset;
+    // Runs on every scroll event: read only the offset. Elastic overscroll is
+    // clamped when the offset is restored.
+    this.current.scroll = element.scrollTop;
   }
   restoreScroll(element = this.scrollElement()) {
     if (!this.options.preserveScroll || !element) return;
-    const top = this.current?.scroll ?? 0;
+    const top = Math.max(0, this.current?.scroll ?? 0);
     if (this.isWindowScroll(element)) {
       if (this.win.scrollY !== top) this.win.scrollTo({ top, behavior: 'instant' });
     }

@@ -33,11 +33,13 @@ import { withStackflow } from '@uiwwsw/stackflow-next/config';
 export default withStackflow({});
 ```
 
-The helper enables Next.js `cacheComponents` and `partialPrefetching`. This is
-what preserves actual React component state and DOM across supported client
-navigations. Retention belongs to Next, not to a second router or a private
-router-context workaround. Existing applications must follow Next's Cache
-Components migration requirements, including Suspense around request-time data.
+The helper turns on Next.js `cacheComponents` and `partialPrefetching` unless
+your config already sets them. Cache Components is what preserves React
+component state and DOM across client navigations; retention belongs to Next,
+not to a second router. It also changes how the app renders, so an app that has
+not migrated (for example one using the `runtime` segment config) can pass
+`withStackflow({ cacheComponents: false })`. Slide transitions, swipe Back and
+scroll restoration work either way; only screen state resets on Back.
 See [Next's state preservation guide](https://nextjs.org/docs/app/guides/preserving-ui-state).
 
 ```tsx

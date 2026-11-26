@@ -308,3 +308,38 @@ test('the track stays available for a horizontal-only overflow and exposes its w
     controller.dispose();
   }
 });
+
+test('UI state attributes do not schedule a layout pass', async t => {
+  const win = new Window();
+  const root = win.document.documentElement;
+  Object.defineProperties(root, {
+    clientHeight: { value: 700 }, clientWidth: { value: 400 }, scrollHeight: { value: 1400 },
+  });
+  Object.defineProperty(win, 'visualViewport', { value: undefined });
+  Object.defineProperty(win, 'scrollY', { get: () => 0 });
+  let paint: FrameRequestCallback;
+  let scheduled = 0;
+  t.mock.method(win, 'requestAnimationFrame', (callback: FrameRequestCallback) => { paint = callback; scheduled++; return 1; });
+  win.document.body.innerHTML = `
+    <div class="stackflow-next"><div><div class="stackflow-next-content"><button>toggle</button></div><div hidden></div></div></div>`;
+  const content = win.document.querySelector('.stackflow-next-content')! as unknown as HTMLElement;
+  const slot = content.nextElementSibling as HTMLElement;
+  const button = content.querySelector('button')!;
+  const { factory } = recordScrollbars();
+  const controller = attachWindowScroll(content, undefined, () => {}, slot, [], false, factory);
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  try {
+    paint!(0);
+    await settle();
+    const before = scheduled;
+    button.setAttribute('aria-pressed', 'true');
+    button.setAttribute('data-state', 'open');
+    await settle();
+    assert.equal(scheduled, before);
+    button.setAttribute('style', 'height:40px');
+    await settle();
+    assert.equal(scheduled, before + 1);
+  } finally {
+    controller.dispose();
+  }
+});
