@@ -44,6 +44,12 @@ export interface StackflowProviderProps {
   preserveScroll?: boolean;
   /** Scroll the browser document or a provider-owned container. Defaults to 'window'. */
   scrollMode?: 'container' | 'window';
+  /**
+   * Fill the viewport like a native app. The document stops scrolling, so no
+   * browser scrollbar appears on <html> or <body>; each page scrolls its own
+   * `scrollTarget` area. Implies `scrollMode="container"`. Defaults to false.
+   */
+  appShell?: boolean;
   /** Select a scroll container, or the scrollbar's display area in window mode. */
   scrollTarget?: string;
   /** Add touch-only bounce where Apple-style native rubber-banding is unavailable. */
@@ -72,7 +78,8 @@ export interface StackflowProviderProps {
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollMode='window',scrollTarget,edgeBounce=false,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollMode: requestedScrollMode='window',appShell=false,scrollTarget,edgeBounce=false,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
+  const scrollMode = appShell ? 'container' : requestedScrollMode;
   const viewport=useRef<HTMLDivElement>(null);
   const scrollbar = useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
@@ -140,7 +147,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     {footer && <div className="stackflow-next-footer">{footer}</div>}
   </>;
   return <Context.Provider value={engine}><LoadingContext.Provider value={loading === undefined ? fallback : loading}>
-    <div className={`stackflow-next ${className}`} data-stackflow-scroll-mode={scrollMode} style={style}>
+    <div className={`stackflow-next ${className}`} data-stackflow-scroll-mode={scrollMode} data-stackflow-app-shell={appShell ? '' : undefined} style={style}>
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
         <div ref={viewport} className="stackflow-next-content">{children}</div>
