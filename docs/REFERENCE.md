@@ -303,36 +303,6 @@ The scroll offset and native scroll range stay at the boundary.
 The effect respects reduced motion. Keep fixed bars outside the moving
 surface, for example as siblings of `scrollTarget` or in the provider slots.
 
-### Run as an app shell
-
-Set `appShell` to make the provider fill the viewport like a native app. The
-document stops scrolling, so the browser never shows a scrollbar on `<html>` or
-`<body>`. The `header`, `persistent` and `footer` slots stay put, and only the
-content area between them scrolls, with the drawn scrollbar inside that area.
-Leave out `header` and `footer` and let each page render its own bars, then
-point `scrollTarget` at the page's scrolling area. `appShell` implies
-`scrollMode="container"`.
-
-```tsx
-// Shared bars from the layout
-<StackflowProvider appShell header={<AppHeader />} footer={<TabBar />}>
-  {children}
-</StackflowProvider>
-
-// Or bars owned by each page
-<StackflowProvider appShell scrollTarget="[data-page-scroll]">
-  {children}
-</StackflowProvider>
-// app/detail/page.tsx
-<div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-  <header style={{ flex: 'none' }}>…</header>
-  <main data-page-scroll style={{ flex: 1, minHeight: 0 }}>…</main>
-</div>
-```
-
-Without `appShell`, window mode also hides the native scrollbar on `<html>`
-and `<body>` and draws its own, but the document itself keeps scrolling.
-
 ### Use an independent scroll container
 
 Set `scrollMode="container"` to keep scrolling inside a bounded provider.

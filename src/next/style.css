@@ -85,17 +85,13 @@ html[data-stackflow-direction][data-stackflow-modal=exit]::view-transition-new(s
 }
 
 .stackflow-next-viewport{position:relative;flex:1;min-height:0;overflow:clip}.stackflow-next-header,.stackflow-next-footer,.stackflow-next-persistent{flex:none}
-/* The drawn scrollbar replaces the browser's. Hide the native one on the
-   document and on <body> (some apps scroll the body) on every engine. */
-html:has(.stackflow-next:is([data-stackflow-scroll-mode=window],[data-stackflow-app-shell])),
-html:has(.stackflow-next:is([data-stackflow-scroll-mode=window],[data-stackflow-app-shell])) > body{scrollbar-width:none}
-html:has(.stackflow-next:is([data-stackflow-scroll-mode=window],[data-stackflow-app-shell]))::-webkit-scrollbar,
-html:has(.stackflow-next:is([data-stackflow-scroll-mode=window],[data-stackflow-app-shell])) > body::-webkit-scrollbar{display:none;width:0;height:0}
-/* App shell: the provider fills the viewport and the document never scrolls.
-   Each page scrolls its own scrollTarget area. */
-html:has(.stackflow-next[data-stackflow-app-shell]),
-html:has(.stackflow-next[data-stackflow-app-shell]) > body{height:100%;overflow:hidden;overscroll-behavior:none}
-.stackflow-next[data-stackflow-app-shell]{position:fixed;inset:0;height:auto}
+/* The document keeps scrolling natively (window.scrollTo, scrollY, scroll
+   events). Only the browser's scrollbar is hidden, on <html> and on <body>
+   for apps that scroll the body, and the drawn scrollbar replaces it. */
+html:has(.stackflow-next[data-stackflow-scroll-mode=window]),
+html:has(.stackflow-next[data-stackflow-scroll-mode=window]) > body{scrollbar-width:none}
+html:has(.stackflow-next[data-stackflow-scroll-mode=window])::-webkit-scrollbar,
+html:has(.stackflow-next[data-stackflow-scroll-mode=window]) > body::-webkit-scrollbar{display:none;width:0;height:0}
 .stackflow-next[data-stackflow-scroll-mode=window]{height:auto;min-height:100dvh;--stackflow-slide-y:0 100dvh}
 [data-stackflow-scroll-mode=window] > .stackflow-next-viewport{display:flex;flex-direction:column;flex:1 0 auto;overflow:visible}
 [data-stackflow-scroll-mode=window] .stackflow-next-content:not([data-stackflow-slide-snapshot]){flex:1 0 auto;height:auto;overflow:visible;overscroll-behavior:auto}
