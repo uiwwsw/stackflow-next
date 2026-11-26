@@ -12,25 +12,21 @@ html[data-stackflow-animating] .stackflow-next-content:not([data-stackflow-slide
 .stackflow-next-content,[data-stackflow-scroll-target],[data-stackflow-native-scrollbar-hidden]{scrollbar-width:none}
 .stackflow-next-content::-webkit-scrollbar,[data-stackflow-scroll-target]::-webkit-scrollbar,[data-stackflow-native-scrollbar-hidden]::-webkit-scrollbar{display:none}
 .stackflow-next-content[data-stackflow-scroll-delegated]{overflow:clip}
-.stackflow-next-scrollbar{
-  position:absolute;top:0;right:3px;width:3px;z-index:3;border-radius:3px;
-  pointer-events:none;opacity:0;transition:opacity 180ms ease-out
+/* The slot is the track box. OverlayScrollbars draws the handle inside it. */
+.stackflow-next-scrollbar{position:absolute;top:0;right:0;width:10px;z-index:3;pointer-events:none}
+.stackflow-next-scrollbar > .os-scrollbar-vertical{top:0;right:0;bottom:0;height:auto}
+.stackflow-next-scrollbar > .os-scrollbar-horizontal{display:none}
+.os-theme-stackflow{
+  box-sizing:border-box;
+  --os-size:10px;--os-padding-perpendicular:3px;--os-padding-axis:0px;
+  --os-track-border-radius:3px;--os-handle-border-radius:3px;--os-handle-min-size:24px;
+  --os-handle-interactive-area-offset:4px;
+  --os-handle-bg:var(--stackflow-scrollbar-color,color-mix(in srgb, CanvasText 36%, transparent));
+  --os-handle-bg-hover:var(--stackflow-scrollbar-active-color,color-mix(in srgb, CanvasText 50%, transparent));
+  --os-handle-bg-active:var(--stackflow-scrollbar-active-color,color-mix(in srgb, CanvasText 58%, transparent))
 }
-.stackflow-next-scrollbar-thumb{
-  width:100%;height:100%;border-radius:inherit;
-  background:var(--stackflow-scrollbar-color,color-mix(in srgb, CanvasText 36%, transparent))
-}
-.stackflow-next-scrollbar:is([data-stackflow-scrolling],[data-stackflow-bouncing]){opacity:1;transition:none}
-@media(prefers-reduced-motion:reduce){.stackflow-next-scrollbar{transition:none}}
-@supports (animation-timeline:scroll(root y)) {
-  .stackflow-next-scrollbar[data-stackflow-scrollbar-root]{
-    animation:stackflow-scrollbar-position linear both;animation-duration:auto;animation-timeline:scroll(root y)
-  }
-  @keyframes stackflow-scrollbar-position{
-    from{transform:translateY(var(--stackflow-scrollbar-start))}
-    to{transform:translateY(var(--stackflow-scrollbar-end))}
-  }
-}
+.stackflow-next-scrollbar[data-stackflow-bouncing] > .os-scrollbar{opacity:1;visibility:visible;transition:none}
+@media(prefers-reduced-motion:reduce){.stackflow-next-scrollbar > .os-scrollbar{transition:none}}
 .stackflow-next-scrollbar[hidden],
 html[data-stackflow-animating] .stackflow-next-scrollbar,
 .stackflow-next-content:is([data-stackflow-slide-staged],[data-stackflow-slide-incoming]) ~ .stackflow-next-scrollbar{display:none}

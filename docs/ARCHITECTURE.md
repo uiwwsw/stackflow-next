@@ -62,6 +62,7 @@ library.
 | Package | Kind | Used for |
 | --- | --- | --- |
 | `@stackflow/core` | dependency | `aggregate` and `makeEvent` in `src/next/engine.ts`, to build the `Stack` returned by `useStack()`. |
+| `overlayscrollbars` | dependency | Draws the vertical scrollbar in `src/next/scroll.ts` (drag, click, auto-hide; handle moved by a `ScrollTimeline` where supported). Its base CSS is bundled into `dist/style.css` by `scripts/build-css.mjs`. |
 | `next` | peer | `next/link`, `next/navigation` (`useRouter`, `usePathname`, `useSearchParams`) and the `NextConfig` type. |
 | `react`, `react-dom` | peer | Components and hooks (`useSyncExternalStore`, `useLayoutEffect`, `Suspense`). |
 
@@ -107,8 +108,9 @@ The `./dom` entry has no dependencies.
   ready.
 - **`scroll.ts`** Scroll handling for the two modes. Window mode keeps document
   scrolling and measures the visible area; container mode scrolls an element.
-  Both draw the custom vertical scrollbar thumb and help the engine save and
-  restore offsets.
+  Both place the scrollbar track (between fixed bars, fitted to the target's
+  content box) and hand the active scroller to an OverlayScrollbars instance
+  that draws the handle. They also help the engine save and restore offsets.
 - **`swipe.ts`** `attachSwipeBack`. Pointer-event gesture starting in the left
   24 px. Moves the live content, reveals a cloned preview of the previous
   screen, and on release either calls `router.back()` or settles back.

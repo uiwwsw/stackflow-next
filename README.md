@@ -31,7 +31,8 @@ An unofficial add-on for the Next.js App Router. It draws slide transitions betw
 - Slide transition between routes; vertical slide for routes in `modalRoutes`.
 - Edge-swipe Back (`swipeBack`) with a preview of the previous screen.
 - Scroll offset restored per history entry (`preserveScroll`).
-- Document scrolling by default (`window.scrollTo`, `window.scrollY` keep working), with a custom vertical scrollbar; an independent scroll container also works (`scrollTarget`).
+- Document scrolling by default (`window.scrollTo`, `window.scrollY` keep working); an independent scroll container also works (`scrollTarget`).
+- A vertical scrollbar drawn with [OverlayScrollbars](https://github.com/KingSora/OverlayScrollbars): its track stays between fixed headers, footers and tab bars, follows whichever scroller is moving, and can be dragged or clicked.
 - `edgeBounce`: optional touch bounce at scroll boundaries on non-Apple touch devices.
 - `skipSlideQueryKeys`: skip the page slide when only a popup query parameter changes.
 - `fixedTargets` keeps chosen elements still during the slide.
@@ -52,22 +53,27 @@ An unofficial add-on for the Next.js App Router. It draws slide transitions betw
 - Next.js below 16.4.6 and React below 19.3.1 are untested.
 - No benchmarks against other libraries.
 - No physics or spring animation. Motion is CSS and the Web Animations API.
+- No horizontal custom scrollbar. Horizontal overflow keeps native scrolling without a drawn bar.
+- The drawn scrollbar no longer shrinks during elastic overscroll; `edgeBounce` still compresses it.
 
 ## Where it stands
 
-| | `@uiwwsw/stackflow-next` | `@stackflow/react` |
-| --- | --- | --- |
-| npm downloads, week of 2026-11-18 | 271 | 38,535 |
-| Maintainers | one | Daangn team |
-| Status | unofficial | official |
+One maintainer, no known production users, not tested on real devices. Compared with the libraries people use for the same job on the Next.js App Router (checked against each project's docs or source, November 2026):
 
-- Usage is close to zero. No known production users.
-- It is a visual layer over Next.js. Stackflow is a full navigation stack with its own router and activity model; this package does not replace it.
-- Versions 3.0.0 to 3.1.0 were published to npm from a branch before they reached `main`; `main` now matches 3.1.0. Eight releases in one day (3.0.0 to 3.1.0 on 2026-11-17) mean the API is still moving.
-- Next.js documents its own View Transitions support ([guide](https://nextjs.org/docs/app/guides/view-transitions)). If a plain page transition is enough, use that and skip this package.
-- For animation work, Motion is the common choice (about 40 million weekly downloads).
-- For a native-style navigation stack with an official maintainer, use Stackflow.
-- Use this package only if you need the swipe-back gesture and per-entry scroll restoration on the Next.js App Router, and accept an unproven, single-maintainer dependency.
+| | stackflow-next | [SSGOI](https://github.com/meursyphus/ssgoi) | [next-view-transitions](https://github.com/shuding/next-view-transitions) | [Stackflow](https://github.com/daangn/stackflow) |
+| --- | --- | --- | --- | --- |
+| Keeps App Router routes and server components | yes | yes | yes | no; its README marks the Next.js example "Not Recommended" |
+| Back/Forward plays the reverse direction | yes, from history position | yes, per saved entry | same animation both ways | yes, with its own router |
+| Swipe Back with a preview of the previous screen | yes | browser's own gesture only | no | yes (cupertino theme) |
+| Scroll position per history entry | yes | yes | no | not applicable |
+| Draggable scrollbar kept clear of fixed bars | yes | no | no | no |
+| Animation engine | View Transitions API | Web Animations API | View Transitions API | CSS transitions |
+| Framework range | Next.js 16.4.6+ | React, Vue, Svelte, Solid, Angular, Qwik; Next.js 13.4–16 | Next.js App Router | React, single page |
+
+- If you need effects beyond slides, older Next.js versions or browsers without View Transitions, SSGOI covers more and is more widely used.
+- If a crossfade on link clicks is enough, Next.js's own `<ViewTransition>` or next-view-transitions is smaller.
+- This package fits an app-like Next.js site that wants swipe Back, per-entry scroll and a scrollbar that respects its fixed header and tab bar together.
+- iOS Safari uses the same left edge for its own Back gesture; how the two interact has not been checked on a device.
 
 ## Install
 

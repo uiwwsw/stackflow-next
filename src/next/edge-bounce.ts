@@ -21,7 +21,8 @@ export function attachEdgeBounce(content: HTMLElement, thumb: HTMLElement | unde
       || !content.animate) return;
 
   const reducedMotion = win.matchMedia('(prefers-reduced-motion: reduce)');
-  const indicator = thumb?.firstElementChild;
+  // The handle of the visible drawn scrollbar inside the slot, if any.
+  const indicator = () => thumb?.querySelector<HTMLElement>('.os-scrollbar-vertical.os-scrollbar-visible .os-scrollbar-handle') ?? undefined;
   let gesture: Gesture | undefined;
   let frame = 0;
   let latest: Touch | undefined;
@@ -119,9 +120,10 @@ export function attachEdgeBounce(content: HTMLElement, thumb: HTMLElement | unde
       bodyAnimation = surface.animate([{translate: '0 0px'}, {translate: `0 ${edge * maxPull}px`}],
         { ...added, duration: maxPull });
       bodyAnimation.pause();
-      if (indicator && thumb && !thumb.hidden) {
+      const handle = indicator();
+      if (handle && thumb && !thumb.hidden) {
         const transformOrigin = edge > 0 ? 'center top' : 'center bottom';
-        thumbAnimation = indicator.animate([{scale: '1 1', transformOrigin}, {scale: '1 .55', transformOrigin}],
+        thumbAnimation = handle.animate([{scale: '1 1', transformOrigin}, {scale: '1 .55', transformOrigin}],
           { duration: maxPull, fill: 'both' });
         thumbAnimation.pause();
       }
@@ -146,8 +148,9 @@ export function attachEdgeBounce(content: HTMLElement, thumb: HTMLElement | unde
     stop();
     const settling = surface.animate([{translate: `0 ${pull}px`}, {translate: '0 0px'}], { ...returnTiming, composite: 'add' });
     bodyAnimation = settling;
-    if (indicator && thumb && !thumb.hidden) {
-      thumbAnimation = indicator.animate([{scale: `1 ${scale}`, transformOrigin}, {scale: '1 1', transformOrigin}], returnTiming);
+    const handle = indicator();
+    if (handle && thumb && !thumb.hidden) {
+      thumbAnimation = handle.animate([{scale: `1 ${scale}`, transformOrigin}, {scale: '1 1', transformOrigin}], returnTiming);
       thumb.setAttribute('data-stackflow-bouncing', '');
     }
     settling.onfinish = () => {
