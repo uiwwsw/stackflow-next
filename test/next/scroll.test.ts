@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
-import { attachScrollViewport, attachWindowScroll, type OverlayScrollbarFactory } from '../../src/next/scroll.ts';
+import { attachScrollViewport, attachWindowScroll, overlayScrollbarOptions, type OverlayScrollbarFactory } from '../../src/next/scroll.ts';
 
 // Records how the provider drives the drawn scrollbars without loading OverlayScrollbars.
 function recordScrollbars() {
@@ -266,3 +266,45 @@ for (const mode of ['window', 'container']) {
     assert.equal(created[0].disposed, true);
   });
 }
+
+test('scrollbar options default to move, 800 ms and hidden until the first scroll', () => {
+  assert.deepEqual(overlayScrollbarOptions().scrollbars, {
+    theme: 'os-theme-stackflow', autoHide: 'move', autoHideDelay: 800, autoHideSuspend: true,
+    dragScroll: true, clickScroll: true,
+  });
+  const custom = overlayScrollbarOptions({ autoHide: 'never', autoHideDelay: 0, autoHideSuspend: false }).scrollbars;
+  assert.equal(custom.autoHide, 'never');
+  assert.equal(custom.autoHideDelay, 0);
+  assert.equal(custom.autoHideSuspend, false);
+  for (const invalid of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(overlayScrollbarOptions({ autoHideDelay: invalid }).scrollbars.autoHideDelay, 800);
+  }
+});
+
+test('the track stays available for a horizontal-only overflow and exposes its width', t => {
+  const win = new Window();
+  const root = win.document.documentElement;
+  // No vertical overflow: the drawn bars decide per axis whether to show.
+  Object.defineProperties(root, {
+    clientHeight: { value: 700 }, clientWidth: { value: 400 }, scrollHeight: { value: 700 },
+  });
+  Object.defineProperty(win, 'visualViewport', { value: undefined });
+  Object.defineProperty(win, 'scrollY', { get: () => 0 });
+  let paint: FrameRequestCallback;
+  t.mock.method(win, 'requestAnimationFrame', (callback: FrameRequestCallback) => { paint = callback; return 1; });
+  win.document.body.innerHTML = `
+    <div class="stackflow-next"><div><div class="stackflow-next-content"></div><div hidden></div></div></div>`;
+  const content = win.document.querySelector('.stackflow-next-content')! as unknown as HTMLElement;
+  const slot = content.nextElementSibling as HTMLElement;
+  t.mock.method(content, 'getBoundingClientRect', () => new win.DOMRect(10, 0, 380, 700));
+  const { factory } = recordScrollbars();
+  const controller = attachWindowScroll(content, undefined, () => {}, slot, [], false, factory);
+  try {
+    paint!(0);
+    assert.equal(slot.hidden, false);
+    assert.equal(slot.style.getPropertyValue('--stackflow-track-width'), '380px');
+    assert.equal(slot.style.right, '10px');
+  } finally {
+    controller.dispose();
+  }
+});

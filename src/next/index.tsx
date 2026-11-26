@@ -4,13 +4,14 @@ import Link, { type LinkProps } from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { NavigationEngine, safeHref, type RouteTransition, type SlideDirection } from './engine.js';
 import { attachSwipeBack } from './swipe.js';
-import { attachScrollViewport, attachWindowScroll } from './scroll.js';
+import { attachScrollViewport, attachWindowScroll, createOverlayScrollbarFactory, type ScrollbarOptions } from './scroll.js';
 import type { FixedTarget } from './fixed-targets.js';
 import { createSkeletonRouteMatcher, type SkeletonRoute } from './skeleton-routes.js';
 import { loadingMessage } from './loading-message.js';
 export type { FixedTarget } from './fixed-targets.js';
 export type { RouteTransition } from './engine.js';
 export type { SkeletonRoute } from './skeleton-routes.js';
+export type { ScrollbarOptions } from './scroll.js';
 export { StackMotion, type StackMotionPreset, type StackMotionProps } from './motion.js';
 
 const Context = createContext<NavigationEngine | null | undefined>(undefined);
@@ -48,6 +49,8 @@ export interface StackflowProviderProps {
   scrollTarget?: string;
   /** Add touch-only bounce where Apple-style native rubber-banding is unavailable. */
   edgeBounce?: boolean;
+  /** When the drawn scrollbar hides itself. Scrolling itself is unaffected. */
+  scrollbar?: ScrollbarOptions;
   /** CSS selectors for shared elements inside the page that should not slide. */
   fixedTargets?: FixedTarget | readonly FixedTarget[];
   /** Pathnames presented as full-height modal pages. */
@@ -72,7 +75,7 @@ export interface StackflowProviderProps {
   className?: string;
   style?: CSSProperties;
 }
-export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollMode='window',scrollTarget,edgeBounce=false,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
+export function StackflowProvider({children,header,footer,persistent,animation='ios',preserveScroll=true,scrollMode='window',scrollTarget,edgeBounce=false,scrollbar: scrollbarOptions,fixedTargets,modalRoutes,transitionRoutes,skipSlideQueryKeys,transitionTarget,swipeBack=false,maxEntries=32,navigationTimeout=4000,waitForPage=false,skeletonRoutes,loading,locale,className='',style}: StackflowProviderProps) {
   const viewport=useRef<HTMLDivElement>(null);
   const scrollbar = useRef<HTMLDivElement>(null);
   const fixed = useRef<readonly FixedTarget[]>([]);
@@ -100,6 +103,8 @@ export function StackflowProvider({children,header,footer,persistent,animation='
       console.warn('[StackflowProvider] Remove transitionTarget to use the full-page transition. Use fixedTargets to keep selected elements still.');
     }
   }, [transitionTarget]);
+  const {autoHide, autoHideDelay, autoHideSuspend} = scrollbarOptions ?? {};
+  const createScrollbar = useMemo(() => createOverlayScrollbarFactory({autoHide, autoHideDelay, autoHideSuspend}), [autoHide, autoHideDelay, autoHideSuspend]);
   useLayoutEffect(()=>{
     const content = viewport.current;
     const thumb = scrollbar.current;
@@ -109,15 +114,15 @@ export function StackflowProvider({children,header,footer,persistent,animation='
     // Let the initial route hydrate before marking a descendant scroll target.
     const frame = window.requestAnimationFrame(() => {
       scroll.current = scrollMode === 'window'
-        ? attachWindowScroll(content, scrollTarget, capture, thumb, fixedSelectors, edgeBounce)
-        : attachScrollViewport(content, scrollTarget, capture, element => engineRef.current?.restoreScroll(element), thumb, fixedSelectors, edgeBounce);
+        ? attachWindowScroll(content, scrollTarget, capture, thumb, fixedSelectors, edgeBounce, createScrollbar)
+        : attachScrollViewport(content, scrollTarget, capture, element => engineRef.current?.restoreScroll(element), thumb, fixedSelectors, edgeBounce, createScrollbar);
     });
     return () => {
       window.cancelAnimationFrame(frame);
       scroll.current?.dispose();
       scroll.current = null;
     };
-  },[scrollTarget,scrollMode,fixedTargets,edgeBounce]);
+  },[scrollTarget,scrollMode,fixedTargets,edgeBounce,createScrollbar]);
   useLayoutEffect(()=>{
     if(!Number.isInteger(maxEntries)||maxEntries<1) throw new RangeError('maxEntries must be positive');
     if(!Number.isFinite(navigationTimeout)||navigationTimeout<=0) throw new RangeError('navigationTimeout must be positive');

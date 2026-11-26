@@ -33,7 +33,7 @@ An unofficial add-on for the Next.js App Router. It draws slide transitions betw
 - Scroll offset restored per history entry (`preserveScroll`).
 - Document scrolling by default (`window.scrollTo`, `window.scrollY` keep working); an independent scroll container also works (`scrollTarget`).
 - Only the scrollbar changes, never the scroller: the document still scrolls, so `window.scrollTo`, `window.scrollY`, `scrollTop` and `scroll` events behave as without the package. The browser's own scrollbar is hidden on `<html>` and `<body>`, and the drawn scrollbar replaces it.
-- A vertical scrollbar drawn with [OverlayScrollbars](https://github.com/KingSora/OverlayScrollbars): its track stays between fixed headers, footers and tab bars, follows whichever scroller is moving, and can be dragged or clicked.
+- A vertical scrollbar drawn with [OverlayScrollbars](https://github.com/KingSora/OverlayScrollbars): its track stays between fixed headers, footers and tab bars, follows whichever scroller is moving, and can be dragged or clicked. A horizontal bar appears along the bottom of the track only when the page overflows sideways. `scrollbar={{ autoHide, autoHideDelay, autoHideSuspend }}` sets when it hides.
 - `edgeBounce`: optional touch bounce at scroll boundaries on non-Apple touch devices.
 - `skipSlideQueryKeys`: skip the page slide when only a popup query parameter changes.
 - `fixedTargets` keeps chosen elements still during the slide.
@@ -54,7 +54,6 @@ An unofficial add-on for the Next.js App Router. It draws slide transitions betw
 - Next.js below 16.4.6 and React below 19.3.1 are untested.
 - No benchmarks against other libraries.
 - No physics or spring animation. Motion is CSS and the Web Animations API.
-- No horizontal custom scrollbar. Horizontal overflow keeps native scrolling without a drawn bar.
 - The drawn scrollbar no longer shrinks during elastic overscroll; `edgeBounce` still compresses it.
 
 ## Where it stands
