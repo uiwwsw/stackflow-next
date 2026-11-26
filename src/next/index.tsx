@@ -144,9 +144,7 @@ export function StackflowProvider({children,header,footer,persistent,animation='
       {header && <div className="stackflow-next-header">{header}</div>}
       <div className="stackflow-next-viewport">
         <div ref={viewport} className="stackflow-next-content">{children}</div>
-        <div ref={scrollbar} className="stackflow-next-scrollbar" aria-hidden="true" hidden>
-          <div className="stackflow-next-scrollbar-thumb" />
-        </div>
+        <div ref={scrollbar} className="stackflow-next-scrollbar" aria-hidden="true" hidden />
       </div>
       {scrollMode === 'window' ? <div className="stackflow-next-bottom">{bottom}</div> : bottom}
     </div>

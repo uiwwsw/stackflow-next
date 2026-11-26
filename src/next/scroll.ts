@@ -1,11 +1,87 @@
+import { ClickScrollPlugin, OverlayScrollbars } from 'overlayscrollbars';
 import { attachEdgeBounce, bounceScrollAttribute } from './edge-bounce.js';
 
 const targetAttribute = 'data-stackflow-scroll-target';
 const delegatedAttribute = 'data-stackflow-scroll-delegated';
 const nativeScrollbarAttribute = 'data-stackflow-native-scrollbar-hidden';
+const sourceAttribute = 'data-stackflow-scroll-source';
 
 type ScrollBounds = { top: number; right: number; bottom: number; left: number };
-type ScrollbarOrigin = { top: number; right: number } | { viewportRight: number; rootTimeline?: boolean };
+type ScrollbarOrigin = { top: number; right: number } | { viewportRight: number };
+
+/** One drawn scrollbar for one native scroller. */
+export type OverlayScrollbar = { setActive(active: boolean): void; dispose(): void };
+/**
+ * Creates the drawn scrollbar for a scroller inside `slot`. `root` means the
+ * document scroller. Returns `undefined` when no scrollbar can be drawn.
+ */
+export type OverlayScrollbarFactory = (scroller: HTMLElement, root: boolean, slot: HTMLElement) => OverlayScrollbar | undefined;
+
+// Shown while the pointer moves or the page scrolls, so a mouse can grab it.
+// Nothing shows before the first scroll (OverlayScrollbars' accessible default).
+const overlayOptions = {
+  scrollbars: {
+    theme: 'os-theme-stackflow', autoHide: 'move', autoHideDelay: 800, autoHideSuspend: true,
+    dragScroll: true, clickScroll: true,
+  },
+} as const;
+let clickScrollRegistered = false;
+
+/**
+ * OverlayScrollbars keeps native scrolling (window.scrollTo, keyboard, touch
+ * momentum) and draws a draggable, clickable scrollbar whose handle follows a
+ * ScrollTimeline where supported. The scroller's DOM is not wrapped: the
+ * document uses <html> as its viewport, and an element is its own viewport.
+ */
+export const createOverlayScrollbar: OverlayScrollbarFactory = (scroller, root, slot) => {
+  try {
+    if (!clickScrollRegistered) {
+      OverlayScrollbars.plugin(ClickScrollPlugin);
+      clickScrollRegistered = true;
+    }
+    const instance = OverlayScrollbars(root
+      ? { target: scroller.ownerDocument.body, scrollbars: { slot }, cancel: { body: null } }
+      : { target: scroller, elements: { viewport: scroller }, scrollbars: { slot } }, overlayOptions);
+    if (!OverlayScrollbars.valid(instance)) return;
+    return {
+      setActive(active) { instance.options({ scrollbars: { visibility: active ? 'auto' : 'hidden' } }); },
+      dispose() { instance.destroy(); },
+    };
+  } catch {
+    return;
+  }
+};
+
+function overlays(slot: HTMLElement, factory: OverlayScrollbarFactory) {
+  const created = new Map<HTMLElement, OverlayScrollbar | undefined>();
+  let active: HTMLElement | undefined;
+  return {
+    show(scroller: HTMLElement, root: boolean) {
+      if (!created.has(scroller)) created.set(scroller, factory(scroller, root, slot));
+      slot.setAttribute(sourceAttribute, root ? 'document' : 'element');
+      if (active === scroller) return;
+      active = scroller;
+      for (const [element, overlay] of created) overlay?.setActive(element === scroller);
+    },
+    release(scroller: HTMLElement) {
+      created.get(scroller)?.dispose();
+      created.delete(scroller);
+      if (active === scroller) active = undefined;
+    },
+    dispose() {
+      for (const overlay of created.values()) overlay?.dispose();
+      created.clear();
+      active = undefined;
+      slot.removeAttribute(sourceAttribute);
+    },
+  };
+}
+
+/** Mutations made by the scrollbar itself must not schedule another layout pass. */
+function ownMutation(record: MutationRecord, slot: HTMLElement | undefined) {
+  return !!slot && (record.target === slot || slot.contains(record.target))
+    || !!record.attributeName?.startsWith('data-overlayscrollbars');
+}
 
 function resolveTarget(content: HTMLElement, selector?: string) {
   if (selector === undefined) return { element: content };
@@ -42,13 +118,19 @@ export function previewScrollElement(content: HTMLElement) {
   return content.querySelector<HTMLElement>(`[${targetAttribute}]`) ?? content;
 }
 
-function paintThumb(thumb: HTMLElement, track: ScrollBounds, scrollRange: number, offset: number, origin: ScrollbarOrigin) {
+/**
+ * Positions the slot over the track. The drawn scrollbar fills the slot and
+ * moves its own handle, so the track only changes when the layout does.
+ * Returns true when the slot's containing block moves with the document,
+ * which means the track must be placed again after each document scroll.
+ */
+function placeTrack(slot: HTMLElement, track: ScrollBounds, scrollRange: number, origin: ScrollbarOrigin) {
   const trackHeight = track.bottom - track.top;
-  thumb.hidden = trackHeight <= 0 || track.right <= track.left || scrollRange <= 0;
-  if (thumb.hidden) return;
+  slot.hidden = trackHeight <= 0 || track.right <= track.left || scrollRange <= 0;
+  if (slot.hidden) return false;
 
   const fixed = 'viewportRight' in origin;
-  const parent = fixed ? thumb.offsetParent as HTMLElement | null : null;
+  const parent = fixed ? slot.offsetParent as HTMLElement | null : null;
   let originTop = fixed ? 0 : origin.top;
   let originRight = fixed ? origin.viewportRight : origin.right;
   if (parent) {
@@ -57,40 +139,13 @@ function paintThumb(thumb: HTMLElement, track: ScrollBounds, scrollRange: number
     originTop = rect.top + (parent.clientTop - parent.scrollTop) * zoom;
     originRight = rect.left + (parent.clientLeft + parent.clientWidth - parent.scrollLeft) * zoom;
   }
-  // A fixed containing block can itself move with the document. In that
-  // case update its origin and the thumb's scroll progress in the same frame.
-  const rootTimeline = fixed && origin.rootTimeline === true && !parent;
-  thumb.toggleAttribute('data-stackflow-scrollbar-root', rootTimeline);
-  const clamped = Math.min(scrollRange, Math.max(0, offset));
-  const normalHeight = Math.min(trackHeight, Math.max(12, trackHeight ** 2 / (trackHeight + scrollRange)));
-  const height = Math.max(Math.min(8, normalHeight), normalHeight - Math.abs(offset - clamped) / 2);
-  const travel = trackHeight - height;
-  const top = track.top - originTop;
   // Track geometry is in viewport pixels. CSS lengths are scaled again by
-  // the thumb's effective zoom, including when inherited from an ancestor.
-  const zoom = thumb.currentCSSZoom || 1;
-  thumb.style.height = `${height / zoom}px`;
-  thumb.style.right = `${(originRight - track.right) / zoom + 3}px`;
-  thumb.style.transform = `translateY(${(top + clamped / scrollRange * travel) / zoom}px)`;
-  if (rootTimeline) {
-    thumb.style.setProperty('--stackflow-scrollbar-start', `${top / zoom}px`);
-    thumb.style.setProperty('--stackflow-scrollbar-end', `${(top + travel) / zoom}px`);
-  }
-}
-
-function scrollbarActivity(win: Window, thumb: HTMLElement) {
-  let timer: number | undefined;
-  return {
-    show() {
-      thumb.setAttribute('data-stackflow-scrolling', '');
-      win.clearTimeout(timer);
-      timer = win.setTimeout(() => thumb.removeAttribute('data-stackflow-scrolling'), 450);
-    },
-    reset() {
-      win.clearTimeout(timer);
-      thumb.removeAttribute('data-stackflow-scrolling');
-    },
-  };
+  // the slot's effective zoom, including when inherited from an ancestor.
+  const zoom = slot.currentCSSZoom || 1;
+  slot.style.height = `${trackHeight / zoom}px`;
+  slot.style.right = `${(originRight - track.right) / zoom}px`;
+  slot.style.transform = `translateY(${(track.top - originTop) / zoom}px)`;
+  return !!parent;
 }
 
 function contentBox(element: HTMLElement, bounds: ScrollBounds, borderBox: boolean): ScrollBounds {
@@ -118,7 +173,7 @@ function fitTrack(track: ScrollBounds, region: ScrollBounds, offset: number, ran
   }
 }
 
-function paintElementScrollbar(thumb: HTMLElement, element: HTMLElement,
+function placeElementTrack(slot: HTMLElement, element: HTMLElement,
   bounds: ScrollBounds, origin: ScrollbarOrigin = bounds,
   excludeChrome?: (track: ScrollBounds) => void, target?: HTMLElement) {
   const rect = element.getBoundingClientRect();
@@ -143,7 +198,7 @@ function paintElementScrollbar(thumb: HTMLElement, element: HTMLElement,
   if (target === element) fitTrack(track, contentBox(element, scrollport, false), 0, 0);
   else if (target) fitTrack(track, contentBox(target, target.getBoundingClientRect(), true), offset, range);
   excludeChrome?.(track);
-  paintThumb(thumb, track, range, offset, origin);
+  return placeTrack(slot, track, range, origin);
 }
 
 function visualBounds(content: HTMLElement): ScrollBounds {
@@ -248,7 +303,8 @@ export function sizeWindowScrollSnapshot(snapshot: HTMLElement, bounds: DOMRect)
 }
 
 export function attachWindowScroll(content: HTMLElement, selector: string | undefined,
-  onScroll: (element: HTMLElement) => void, thumb: HTMLElement, fixedSelectors: readonly string[] = [], edgeBounce = false) {
+  onScroll: (element: HTMLElement) => void, slot: HTMLElement, fixedSelectors: readonly string[] = [], edgeBounce = false,
+  createScrollbar: OverlayScrollbarFactory = createOverlayScrollbar) {
   const doc = content.ownerDocument;
   const win = doc.defaultView!;
   const viewport = win.visualViewport;
@@ -262,9 +318,11 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
   let target = content;
   let dirty = true;
   let frame = 0;
-  const activity = scrollbarActivity(win, thumb);
+  // True while the slot's containing block moves with the document.
+  let followsDocument = false;
+  const scrollbars = overlays(slot, createScrollbar);
   const chrome = observeFixedChrome(content, fixedSelectors, schedule);
-  const bounce = edgeBounce ? attachEdgeBounce(content, thumb, hit => {
+  const bounce = edgeBounce ? attachEdgeBounce(content, slot, hit => {
     const scroller = nestedScroller?.contains(hit) ? nestedScroller : root;
     if (scroller !== root && root.scrollHeight > root.clientHeight &&
       /^(auto|chain)$/.test(win.getComputedStyle(scroller).overscrollBehaviorY)) return;
@@ -294,12 +352,10 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
       if (nextScroller !== nestedScroller) {
         if (nestedScroller) {
           if (nestedScroller !== target) resize.unobserve(nestedScroller);
+          scrollbars.release(nestedScroller);
           nestedScroller.removeAttribute(nativeScrollbarAttribute);
         }
-        if (activeScroller === nestedScroller) {
-          activeScroller = root;
-          activity.reset();
-        }
+        if (activeScroller === nestedScroller) activeScroller = root;
         nestedScroller = nextScroller;
         if (nestedScroller) {
           nestedScroller.setAttribute(nativeScrollbarAttribute, '');
@@ -314,8 +370,9 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
     // scroller reaches its edge. Use the source that actually moved.
     const scroller = range > 0 ? activeScroller : nestedScroller ?? root;
     const viewportRight = doc.documentElement.clientWidth;
+    scrollbars.show(scroller, scroller === root);
     if (scroller !== root) {
-      paintElementScrollbar(thumb, scroller, viewportBounds, { viewportRight }, chrome.exclude, target);
+      followsDocument = placeElementTrack(slot, scroller, viewportBounds, { viewportRight }, chrome.exclude, target);
       return;
     }
     const rect = target.getBoundingClientRect();
@@ -326,33 +383,34 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
       viewportBounds.right = Math.min(viewportBounds.right, region.right);
     }
     chrome.exclude(viewportBounds);
-    paintThumb(thumb, viewportBounds, range, win.scrollY, { viewportRight, rootTimeline: true });
+    followsDocument = placeTrack(slot, viewportBounds, range, { viewportRight });
   }
 
   function schedule() { if (!frame) frame = win.requestAnimationFrame(paint); }
   function scrolled(event: Event) {
     const documentEvent = event.target === doc || event.target === win;
+    const previous = activeScroller;
     if (documentEvent) {
       onScroll(root);
       if (win.scrollY !== rootOffset) {
         bounce?.clearEffect();
         rootOffset = win.scrollY;
         activeScroller = root;
-        activity.show();
       }
     } else if (nestedScroller && event.target === nestedScroller && nestedScroller.scrollTop !== nestedOffset) {
       bounce?.clearEffect();
       nestedOffset = nestedScroller.scrollTop;
       activeScroller = nestedScroller;
-      activity.show();
     }
-    if (documentEvent || event.target === nestedScroller) schedule();
+    // The track is fixed to the layout. It only moves when the scroll source
+    // changes or the slot's containing block scrolls with the document.
+    if (activeScroller !== previous || (documentEvent && followsDocument)) schedule();
   }
   function invalidate() { bounce?.clearEffect(); dirty = true; schedule(); }
   const unwatchVisibility = watchTargetVisibility(content, selector, invalidate);
   const resize = new win.ResizeObserver(invalidate);
   const mutation = new win.MutationObserver(records => {
-    if (records.some(record => record.target !== thumb && record.attributeName !== nativeScrollbarAttribute &&
+    if (records.some(record => !ownMutation(record, slot) && record.attributeName !== nativeScrollbarAttribute &&
       record.attributeName !== bounceScrollAttribute)) invalidate();
   });
   resize.observe(content);
@@ -377,10 +435,9 @@ export function attachWindowScroll(content: HTMLElement, selector: string | unde
       viewport?.removeEventListener('resize', schedule);
       viewport?.removeEventListener('scroll', schedule);
       win.cancelAnimationFrame(frame);
+      scrollbars.dispose();
       nestedScroller?.removeAttribute(nativeScrollbarAttribute);
-      activity.reset();
-      thumb.removeAttribute('data-stackflow-scrollbar-root');
-      thumb.hidden = true;
+      slot.hidden = true;
     },
   };
 }
@@ -390,16 +447,17 @@ export function attachScrollViewport(
   selector: string | undefined,
   onScroll: (element: HTMLElement) => void,
   onTargetReady: (element: HTMLElement) => void,
-  thumb?: HTMLElement,
+  slot?: HTMLElement,
   fixedSelectors: readonly string[] = [],
   edgeBounce = false,
+  createScrollbar: OverlayScrollbarFactory = createOverlayScrollbar,
 ) {
   let element = content;
   element.addEventListener('scroll', scrolled, { passive: true });
   const win = content.ownerDocument.defaultView!;
-  const activity = thumb && scrollbarActivity(win, thumb);
-  const chrome = thumb && observeFixedChrome(content, fixedSelectors, schedule);
-  const bounce = edgeBounce ? attachEdgeBounce(content, thumb, hit => {
+  const scrollbars = slot && overlays(slot, createScrollbar);
+  const chrome = slot && observeFixedChrome(content, fixedSelectors, schedule);
+  const bounce = edgeBounce ? attachEdgeBounce(content, slot, hit => {
     const scroller = getElement();
     if (scroller.contains(hit) && !chrome?.isInside(scroller)) return { scroller, surface: scroller };
   }) : undefined;
@@ -418,9 +476,10 @@ export function attachScrollViewport(
     const previous = element;
     const current = getElement();
     if (current !== previous && current !== content) onTargetReady(current);
-    if (thumb?.parentElement) {
-      const bounds = thumb.parentElement.getBoundingClientRect();
-      paintElementScrollbar(thumb, current, bounds, bounds, chrome?.exclude, current === content ? undefined : current);
+    if (slot?.parentElement) {
+      scrollbars?.show(current, false);
+      const bounds = slot.parentElement.getBoundingClientRect();
+      placeElementTrack(slot, current, bounds, bounds, chrome?.exclude, current === content ? undefined : current);
     }
   }
 
@@ -428,14 +487,14 @@ export function attachScrollViewport(
     if (!frame) frame = win.requestAnimationFrame(refreshTarget);
   }
 
+  // The drawn scrollbar follows the scroller itself; the track only changes
+  // with the layout, which the observers below report.
   function scrolled() {
     onScroll(element);
     if (element.scrollTop !== previousOffset) {
       bounce?.clearEffect();
       previousOffset = element.scrollTop;
-      activity?.show();
     }
-    if (thumb) schedule();
   }
 
   function invalidate() {
@@ -448,7 +507,7 @@ export function attachScrollViewport(
   const unwatchVisibility = watchTargetVisibility(content, selector, invalidate);
   const resize = new win.ResizeObserver(invalidate);
   const mutation = new win.MutationObserver(records => {
-    if (records.some(record => record.target !== thumb &&
+    if (records.some(record => !ownMutation(record, slot) &&
       record.attributeName !== targetAttribute && record.attributeName !== delegatedAttribute &&
       record.attributeName !== bounceScrollAttribute)) invalidate();
   });
@@ -463,20 +522,20 @@ export function attachScrollViewport(
     }
     if (next !== element) {
       element.removeEventListener('scroll', scrolled);
+      scrollbars?.release(element);
       if (element !== content) {
         resize.unobserve(element);
         element.removeAttribute(targetAttribute);
       }
       element = next;
       previousOffset = element.scrollTop;
-      activity?.reset();
       content.toggleAttribute(delegatedAttribute, element !== content);
       if (element !== content) {
         element.setAttribute(targetAttribute, '');
         resize.observe(element);
       }
       element.addEventListener('scroll', scrolled, { passive: true });
-      if (thumb) schedule();
+      if (slot) schedule();
     }
     return element;
   }
@@ -486,7 +545,7 @@ export function attachScrollViewport(
   content.addEventListener('load', invalidate, true);
   win.addEventListener('resize', invalidate);
   getElement();
-  if (thumb) schedule();
+  if (slot) schedule();
   return {
     getElement,
     dispose() {
@@ -495,14 +554,14 @@ export function attachScrollViewport(
       mutation.disconnect();
       resize.disconnect();
       chrome?.dispose();
+      scrollbars?.dispose();
       element.removeEventListener('scroll', scrolled);
       if (element !== content) element.removeAttribute(targetAttribute);
       content.removeAttribute(delegatedAttribute);
       content.removeEventListener('load', invalidate, true);
       win.removeEventListener('resize', invalidate);
       win.cancelAnimationFrame(frame);
-      activity?.reset();
-      if (thumb) thumb.hidden = true;
+      if (slot) slot.hidden = true;
     },
   };
 }

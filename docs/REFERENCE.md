@@ -245,11 +245,12 @@ hash, or another query key also changes, the usual transition rules apply.
 The document scrolls by default. Existing calls to `window.scrollTo()` and
 `window.scrollBy()`, reads of `window.scrollY`, and window `scroll` listeners
 work with this package. It hides the browser's document scrollbar and
-draws a vertical thumb beside the content box of `scrollTarget`, excluding
+draws a vertical scrollbar with [OverlayScrollbars](https://github.com/KingSora/OverlayScrollbars)
+beside the content box of `scrollTarget`, excluding
 its margins, borders and padding. The track starts at the content's top edge
 as seen at the start of scrolling and ends at its bottom edge as seen at
 the end of scrolling, within the visible viewport. Its length stays steady
-as the content moves and the thumb follows the full native scroll range.
+as the content moves and the handle follows the full native scroll range.
 No header or footer settings are needed.
 
 When a sticky provider slot or a fixed bar covers the track, the track stops
@@ -262,8 +263,9 @@ height between any recognized bars.
 
 If existing CSS makes the selected area an independent native scroller,
 the scrollbar follows that element while it scrolls and switches to the
-document when document scrolling takes over. The thumb fades shortly after
-vertical scrolling stops.
+document when document scrolling takes over. The scrollbar appears while the
+pointer moves or the page scrolls and hides 0.8 seconds later. Drag the handle
+or click the track to scroll; keyboard, wheel and touch scrolling stay native.
 
 ```tsx
 <StackflowProvider scrollTarget="[data-app-scroll]">
@@ -274,9 +276,11 @@ vertical scrolling stops.
 Let the provider and content grow with the page. The header sticks to the
 top, and `persistent` and `footer` stick together at the bottom. The browser
 handles wheel and touch input, momentum, and elastic overscroll where
-supported. The thumb compresses at the edge when the browser reports an
-elastic offset. Set `--stackflow-scrollbar-color` on the provider to set its
-color.
+supported. Set `--stackflow-scrollbar-color` and
+`--stackflow-scrollbar-active-color` (hover and drag) on the provider to set its
+colors. The scrollbar uses the `os-theme-stackflow` OverlayScrollbars theme, so
+its CSS variables (`--os-size`, `--os-handle-min-size` and others) can be
+overridden too.
 
 If the app positions its own bars with CSS `position: fixed`, reserve their
 heights in the layout so the first and last content remain reachable.

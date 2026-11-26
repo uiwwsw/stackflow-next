@@ -1,6 +1,6 @@
 {
   "name": "@uiwwsw/stackflow-next",
-  "version": "3.1.1",
+  "version": "3.2.0",
   "type": "module",
   "description": "Unofficial slide transitions, swipe-back and scroll restoration for the Next.js App Router, built on Next.js Cache Components, @stackflow/core and the View Transitions API",
   "keywords": [
@@ -22,7 +22,7 @@
     },
     "./style.css": {
       "types": "./src/style.d.ts",
-      "default": "./src/next/style.css"
+      "default": "./dist/style.css"
     },
     "./dom": {
       "types": "./src/index.d.ts",
@@ -50,7 +50,7 @@
   "scripts": {
     "test": "node --import tsx --test test/*.test.js test/next/*.test.ts",
     "check": "tsc --noEmit",
-    "build": "tsc",
+    "build": "tsc && node scripts/build-css.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {
@@ -66,7 +66,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@stackflow/core": "^3.1.0"
+    "@stackflow/core": "^3.1.0",
+    "overlayscrollbars": "^2.17.1"
   },
   "peerDependencies": {
     "next": "^16.4.6",
