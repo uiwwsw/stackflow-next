@@ -9,8 +9,8 @@
   <a href="https://github.com/uiwwsw/stackflow-next/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/npm/l/@uiwwsw/stackflow-next?style=flat-square"></a>
   <a href="https://github.com/uiwwsw/stackflow-next/actions/workflows/public-docs.yml"><img alt="commit hygiene workflow" src="https://img.shields.io/github/actions/workflow/status/uiwwsw/stackflow-next/public-docs.yml?branch=main&style=flat-square&label=hygiene"></a>
   <img alt="types: TypeScript" src="https://img.shields.io/npm/types/@uiwwsw/stackflow-next?style=flat-square">
-  <img alt="next 16.4.6 or later" src="https://img.shields.io/badge/next-%E2%89%A5%2016.4.6-black?style=flat-square">
-  <img alt="react 19.3.1 or later" src="https://img.shields.io/badge/react-%E2%89%A5%2019.3.1-087ea4?style=flat-square">
+  <img alt="next 13.4 or later" src="https://img.shields.io/badge/next-%E2%89%A5%2013.4-black?style=flat-square">
+  <img alt="react 18.2 or later" src="https://img.shields.io/badge/react-%E2%89%A5%2018.2-087ea4?style=flat-square">
 </p>
 
 <p>
@@ -61,7 +61,7 @@ Not made by or affiliated with the [Stackflow](https://github.com/daangn/stackfl
 - No state retention of its own. State survives only while Next.js keeps the route, and not across a reload.
 - No fallback animation. Browsers without View Transitions use ordinary navigation.
 - The swipe preview is a DOM clone; canvas, video and embedded content may differ.
-- Next.js below 16.4.6 and React below 19.3.1 are untested.
+- Next.js 13 to 15 do not keep ordinary component state on Back; that needs Cache Components in Next.js 16. `useStackState` works on every version.
 - No benchmarks against other libraries.
 - No physics or spring animation. Motion is CSS and the Web Animations API.
 - The drawn scrollbar no longer shrinks during elastic overscroll; `edgeBounce` still compresses it.
@@ -72,7 +72,7 @@ Not made by or affiliated with the [Stackflow](https://github.com/daangn/stackfl
 npm install @uiwwsw/stackflow-next
 ```
 
-Requires Next.js 16.4.6 or later and React 19.3.1 or later.
+Works with Next.js 13.4 or later (App Router) and React 18.2 or later. Builds and navigation were checked on Next.js 13.4, 13.5, 14.2, 15.1, 15.5, 16.0 and 16.4 with React 18.2, 18.3, 19.0, 19.2 and 19.3.
 
 ```js
 // next.config.mjs

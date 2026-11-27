@@ -14,3 +14,13 @@ test('withStackflow keeps values the app sets', () => {
   assert.equal(config.cacheComponents, false);
   assert.equal(config.partialPrefetching, false);
 });
+
+test('withStackflow leaves options older Next.js versions do not know', () => {
+  const v15 = withStackflow({ basePath: '/app' }, '15.5.0');
+  assert.equal('cacheComponents' in v15, false);
+  assert.equal('partialPrefetching' in v15, false);
+  const v16 = withStackflow({}, '16.2.1');
+  assert.equal(v16.cacheComponents, true);
+  assert.equal('partialPrefetching' in v16, false);
+  assert.equal(withStackflow({}, '16.3.0').partialPrefetching, true);
+});
