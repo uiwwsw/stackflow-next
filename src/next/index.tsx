@@ -1,5 +1,5 @@
 'use client';
-import { createContext, Suspense, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import { createContext, forwardRef, Suspense, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import Link, { type LinkProps } from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { NavigationEngine, safeHref, type RouteTransition, type SlideDirection } from './engine.js';
@@ -8,6 +8,7 @@ import { attachScrollViewport, attachWindowScroll, createOverlayScrollbarFactory
 import type { FixedTarget } from './fixed-targets.js';
 import { createSkeletonRouteMatcher, type SkeletonRoute } from './skeleton-routes.js';
 import { loadingMessage } from './loading-message.js';
+import { isPlainNavigationClick } from './react-compat.js';
 export type { FixedTarget } from './fixed-targets.js';
 export type { RouteTransition } from './engine.js';
 export type { SkeletonRoute } from './skeleton-routes.js';
@@ -202,18 +203,25 @@ export function useStackState<T>(key:string,initial:T|(()=>T)): [T,Dispatch<SetS
   },[engine,key]);
   return [value,set];
 }
-export type StackLinkProps = Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>,'href'> & Omit<LinkProps,'href'> & {href:string};
-export function StackLink({href,onNavigate,replace,...props}:StackLinkProps) {
+export type StackLinkProps = Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>,'href'> & Omit<LinkProps,'href'|'onNavigate'> & {
+  href:string;
+  /** Called before a client-side navigation; preventDefault cancels it. Works on every supported Next.js version. */
+  onNavigate?: (event:{preventDefault():void}) => void;
+};
+export const StackLink = forwardRef<HTMLAnchorElement, StackLinkProps>(function StackLink({href,onNavigate,onClick,replace,...props},ref) {
   const router=useStackRouter();
   const engine=useEngine();
-  return <Link {...props} href={href} replace={replace} onNavigate={event=>{
+  // onClick instead of Link's onNavigate, which only exists from Next.js 15.3.
+  return <Link {...props} ref={ref} href={href} replace={replace} onClick={event=>{
+    onClick?.(event);
+    if(!isPlainNavigationClick(event))return;
     let cancelled=false;
-    onNavigate?.({preventDefault(){cancelled=true;event.preventDefault();}});
-    if(cancelled)return;
+    onNavigate?.({preventDefault(){cancelled=true;}});
+    if(cancelled){event.preventDefault();return;}
     const url=new URL(href,window.location.href);
     if(url.origin!==window.location.origin||!['http:','https:'].includes(url.protocol))return;
     // Let Next handle same-document anchors and unchanged routes.
     if(engine ? engine.isCurrentRoute(href) : url.pathname===window.location.pathname&&url.search===window.location.search)return;
     event.preventDefault(); (replace?router.replace:router.push)(href);
   }}/>;
-}
+});

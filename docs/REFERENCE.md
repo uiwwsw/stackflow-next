@@ -454,7 +454,7 @@ reloads, and links activated before hydration follow browser navigation. Only sa
 HTTP(S) destinations are supported by the router helper. Ordinary Next Links
 still work but forward snapshot motion requires StackLink or useStackRouter.
 
-The current version targets Next.js 16.4.6+, React 19.3.1+ and Stackflow core 3.1.0.
+The current version supports Next.js 13.4+ (App Router), React 18.2+ and Stackflow core 3.1.0. On Next.js 13 to 15, ordinary component state is not kept on Back; `useStackState` is.
 Parallel/intercepting routes and real-device mobile gestures are not yet certified.
 
 ## Other options

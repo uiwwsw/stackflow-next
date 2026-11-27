@@ -150,9 +150,11 @@ The `./dom` entry has no dependencies.
 
 ## Limits
 
-- Needs Next.js 16.4.6 or later and React 19.3.1 or later; versions below
-  that are not tested.
-- State retention depends on Next.js Cache Components and can be evicted by
+- Needs Next.js 13.4 or later (App Router) and React 18.2 or later.
+  `withStackflow` adds `cacheComponents` only on Next.js 16 and
+  `partialPrefetching` only on 16.3 or later; older versions get the config
+  back unchanged.
+- State retention depends on Next.js 16 Cache Components and can be evicted by
   Next; it does not survive a reload.
 - The page slide uses View Transitions. Browsers without
   them navigate normally.
